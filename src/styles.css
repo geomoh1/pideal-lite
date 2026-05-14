@@ -766,6 +766,7 @@ input::placeholder {
 
 .terms-box,
 .delivery-box,
+.material-list,
 .inline-callout,
 .status-hint {
   border: 1px solid var(--line);
@@ -782,6 +783,7 @@ input::placeholder {
 
 .terms-box p,
 .delivery-box p,
+.material-list p,
 .order-status p {
   margin: 0;
   color: var(--muted);
@@ -794,6 +796,11 @@ input::placeholder {
   display: grid;
   gap: 12px;
   padding: 14px;
+}
+
+.request-materials {
+  display: grid;
+  gap: 10px;
 }
 
 textarea,
@@ -878,6 +885,13 @@ textarea {
   padding: 12px;
 }
 
+.material-list {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 7px;
+  padding: 10px;
+}
+
 .delivery-link {
   display: inline-flex;
   align-items: center;
@@ -914,7 +928,9 @@ textarea {
   background: #ffd978;
 }
 
-.form-panel label {
+.form-panel label,
+.request-materials label,
+.delivery-form label {
   display: grid;
   gap: 7px;
   color: var(--ink);
@@ -931,9 +947,24 @@ textarea {
 }
 
 .form-panel input,
-.form-panel select {
+.form-panel select,
+.request-materials input,
+.delivery-form input {
   height: 46px;
   padding: 0 12px;
+}
+
+.file-field input {
+  height: auto;
+  padding: 11px;
+  background: #fff;
+}
+
+.file-field span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
 }
 
 .form-row {

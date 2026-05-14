@@ -24,13 +24,13 @@ PiDeal Lite is a mobile-first React marketplace for Pi Browser where Pi Network 
 Buyer:
 
 ```text
-Open App -> Pi Login -> Browse -> Service Details -> Order -> Pi Payment -> Delivery -> Confirm -> Rating
+Open App -> Pi Login -> Browse -> Service Details -> Add brief/materials -> Order -> Pi Payment -> Delivery -> Confirm -> Rating
 ```
 
 Seller:
 
 ```text
-Login -> Add Service -> Pending Review -> Approved -> Receive Order -> Deliver -> Buyer Confirms -> Rating
+Login -> Add Service -> Pending Review -> Approved -> Receive Order materials -> Deliver message/link/file -> Buyer Confirms -> Rating
 ```
 
 Admin:
@@ -52,6 +52,20 @@ Admin placeholder -> Review Services -> Approve/Reject -> Monitor Orders -> Reso
 ## Business model placeholder
 
 The MVP shows a simple `5%` platform commission on successful paid orders.
+
+## Buyer materials and seller delivery
+
+The MVP now captures the digital handoff needed for services such as logo references, translation text, CV edits, image cleanup, and simple code work:
+
+- Buyer request brief
+- Source text for translation/writing/code prompts
+- Reference link
+- Reference file selection shown as file name and size
+- Seller delivery message
+- Seller delivery link
+- Seller delivery file selection shown as file name and size
+
+Current demo mode records file metadata only. It does not upload or store binary files yet. Before public production, add a dedicated upload endpoint and object storage such as S3, Cloudflare R2, Supabase Storage, or another persistent file store. Keep SQLite for metadata only, not file blobs.
 
 ## Pi SDK integration
 

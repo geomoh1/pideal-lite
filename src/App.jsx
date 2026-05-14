@@ -15,6 +15,7 @@ import {
   Home,
   Link as LinkIcon,
   LogIn,
+  Paperclip,
   Plus,
   Search,
   ShieldCheck,
@@ -175,8 +176,14 @@ const initialOrders = [
     paidPi: 12,
     platformFeePi: 0.6,
     buyerNote: 'Please make this CV stronger for remote product roles.',
+    requestSourceText: 'Existing CV text and target role details.',
+    requestReferenceLink: '',
+    requestFileName: 'ali-current-cv.pdf',
+    requestFileSize: '420 KB',
     deliveryMessage: '',
     deliveryLink: '',
+    deliveryFileName: '',
+    deliveryFileSize: '',
     rating: null,
     createdAt: '2026-05-12',
   },
@@ -192,8 +199,14 @@ const initialOrders = [
     paidPi: 5,
     platformFeePi: 0.25,
     buyerNote: 'Clean up five product shots for a Pi service listing.',
+    requestSourceText: '',
+    requestReferenceLink: 'https://example.com/source-images',
+    requestFileName: 'product-shots.zip',
+    requestFileSize: '8.6 MB',
     deliveryMessage: 'Images are cleaned and exported in square and story sizes.',
     deliveryLink: 'https://example.com/mock-delivery',
+    deliveryFileName: 'cleaned-product-images.zip',
+    deliveryFileSize: '6.2 MB',
     rating: null,
     createdAt: '2026-05-13',
   },
@@ -219,6 +232,13 @@ const blankService = {
   accent: accentOptions[0],
   summary: '',
   terms: '',
+};
+
+const blankRequestAsset = {
+  sourceText: '',
+  referenceLink: '',
+  fileName: '',
+  fileSize: '',
 };
 
 const demoUsers = [
@@ -265,6 +285,7 @@ function App() {
   const [selectedServiceId, setSelectedServiceId] = useState(initialServices[0].id);
   const [newService, setNewService] = useState(blankService);
   const [requestNote, setRequestNote] = useState('');
+  const [requestAsset, setRequestAsset] = useState(blankRequestAsset);
   const [orderTab, setOrderTab] = useState('buyer');
   const [adminTab, setAdminTab] = useState('services');
   const [deliveryDrafts, setDeliveryDrafts] = useState({});
@@ -359,6 +380,12 @@ function App() {
     setSelectedServiceId(serviceId);
     setActiveView('detail');
     setRequestNote('');
+    setRequestAsset(blankRequestAsset);
+  }
+
+  function updateRequestAsset(field, value) {
+    const patch = typeof field === 'object' ? field : { [field]: value };
+    setRequestAsset((current) => ({ ...current, ...patch }));
   }
 
   function handleAddService(event) {
@@ -427,8 +454,14 @@ function App() {
       paidPi: 0,
       platformFeePi: 0,
       buyerNote: requestNote.trim(),
+      requestSourceText: requestAsset.sourceText.trim(),
+      requestReferenceLink: requestAsset.referenceLink.trim(),
+      requestFileName: requestAsset.fileName,
+      requestFileSize: requestAsset.fileSize,
       deliveryMessage: '',
       deliveryLink: '',
+      deliveryFileName: '',
+      deliveryFileSize: '',
       rating: null,
       createdAt: new Date().toISOString().slice(0, 10),
     };
@@ -437,6 +470,7 @@ function App() {
     setFlowNotice('Order created. Choose a deposit or full payment to continue.');
     setOrders((current) => [order, ...current]);
     setRequestNote('');
+    setRequestAsset(blankRequestAsset);
   }
 
   async function handlePayOrder(orderId, mode) {
@@ -510,13 +544,17 @@ function App() {
   }
 
   function updateDeliveryDraft(orderId, field, value) {
+    const patch = typeof field === 'object' ? field : { [field]: value };
+
     setDeliveryDrafts((current) => ({
       ...current,
       [orderId]: {
         deliveryMessage: '',
         deliveryLink: '',
+        deliveryFileName: '',
+        deliveryFileSize: '',
         ...current[orderId],
-        [field]: value,
+        ...patch,
       },
     }));
   }
@@ -532,6 +570,8 @@ function App() {
               status: ORDER_STATUS.DELIVERED,
               deliveryMessage: draft.deliveryMessage || 'Delivery submitted by seller.',
               deliveryLink: draft.deliveryLink || '',
+              deliveryFileName: draft.deliveryFileName || '',
+              deliveryFileSize: draft.deliveryFileSize || '',
             }
           : order,
       ),
@@ -672,6 +712,8 @@ function App() {
             activeOrder={activeOrder}
             requestNote={requestNote}
             setRequestNote={setRequestNote}
+            requestAsset={requestAsset}
+            updateRequestAsset={updateRequestAsset}
             onBack={() => setActiveView('home')}
             onRequest={handleRequestService}
             onPay={handlePayOrder}
@@ -937,6 +979,8 @@ function DetailView({
   activeOrder,
   requestNote,
   setRequestNote,
+  requestAsset,
+  updateRequestAsset,
   onBack,
   onRequest,
   onPay,
@@ -1010,18 +1054,50 @@ function DetailView({
         )}
 
         {!activeOrder && !isOwnListing && (
-          <>
-            <textarea
-              value={requestNote}
-              onChange={(event) => setRequestNote(event.target.value)}
-              placeholder="Briefly describe what you need"
-              rows={4}
-            />
+          <div className="request-materials">
+            <label>
+              Brief
+              <textarea
+                value={requestNote}
+                onChange={(event) => setRequestNote(event.target.value)}
+                placeholder="Describe what the seller should create or edit"
+                rows={4}
+              />
+            </label>
+            <label>
+              Source text
+              <textarea
+                value={requestAsset.sourceText}
+                onChange={(event) => updateRequestAsset('sourceText', event.target.value)}
+                placeholder="Paste text for translation, CV edits, prompts, or copy work"
+                rows={4}
+              />
+            </label>
+            <label>
+              Reference link
+              <input
+                value={requestAsset.referenceLink}
+                onChange={(event) => updateRequestAsset('referenceLink', event.target.value)}
+                placeholder="https://example.com/reference"
+              />
+            </label>
+            <label className="file-field">
+              Reference file
+              <input
+                type="file"
+                onChange={(event) => updateRequestAsset(filePatchFromInput(event))}
+              />
+              <span>
+                {requestAsset.fileName
+                  ? `${requestAsset.fileName} ${requestAsset.fileSize ? `(${requestAsset.fileSize})` : ''}`
+                  : 'No file selected'}
+              </span>
+            </label>
             <button className="primary-button" onClick={() => onRequest(service)}>
               <WalletCards size={19} />
               {user ? 'Request service' : 'Pi Login to order'}
             </button>
-          </>
+          </div>
         )}
 
         {activeOrder && (
@@ -1058,6 +1134,7 @@ function OrderProgress({
         <strong>{order.status}</strong>
         <p>{order.buyerNote || 'No buyer note added.'}</p>
       </div>
+      <OrderMaterials order={order} />
       <StatusTimeline status={order.status} />
 
       {order.status === ORDER_STATUS.PENDING_PAYMENT && (
@@ -1083,6 +1160,12 @@ function OrderProgress({
           <p>{order.deliveryMessage}</p>
           {order.deliveryLink && (
             <span className="delivery-link"><LinkIcon size={15} /> {order.deliveryLink}</span>
+          )}
+          {order.deliveryFileName && (
+            <span className="delivery-link">
+              <Paperclip size={15} />
+              {order.deliveryFileName} {order.deliveryFileSize ? `(${order.deliveryFileSize})` : ''}
+            </span>
           )}
           <button className="secondary-button" onClick={() => onConfirmDelivery(order.id)}>
             <ShieldCheck size={18} />
@@ -1119,6 +1202,33 @@ function StatusTimeline({ status }) {
           </span>
         );
       })}
+    </div>
+  );
+}
+
+function OrderMaterials({ order }) {
+  const hasMaterials = Boolean(
+    order.requestSourceText || order.requestReferenceLink || order.requestFileName,
+  );
+
+  if (!hasMaterials) return null;
+
+  return (
+    <div className="material-list">
+      <span className="eyebrow">Buyer materials</span>
+      {order.requestSourceText && <p>{order.requestSourceText}</p>}
+      {order.requestReferenceLink && (
+        <span className="delivery-link">
+          <LinkIcon size={15} />
+          {order.requestReferenceLink}
+        </span>
+      )}
+      {order.requestFileName && (
+        <span className="delivery-link">
+          <Paperclip size={15} />
+          {order.requestFileName} {order.requestFileSize ? `(${order.requestFileSize})` : ''}
+        </span>
+      )}
     </div>
   );
 }
@@ -1363,7 +1473,7 @@ function OrderCard({
   onDisputeOrder,
 }) {
   const hasDeliveryContent = Boolean(
-    draft.deliveryMessage?.trim() || draft.deliveryLink?.trim(),
+    draft.deliveryMessage?.trim() || draft.deliveryLink?.trim() || draft.deliveryFileName,
   );
   const counterpart = mode === 'seller' ? `Buyer: ${order.buyerName}` : `Seller: ${order.sellerName}`;
 
@@ -1374,6 +1484,7 @@ function OrderCard({
         <StatusBadge status={order.status} />
       </button>
       <p>{counterpart}. {order.buyerNote || 'No buyer note added.'}</p>
+      <OrderMaterials order={order} />
       <div className="order-meta-grid">
         <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
         <Metric label="Fee 5%" value={`${order.platformFeePi || 0} Pi`} />
@@ -1420,6 +1531,18 @@ function OrderCard({
               placeholder="https://example.com/mock-delivery"
             />
           </label>
+          <label className="file-field">
+            Delivery file
+            <input
+              type="file"
+              onChange={(event) => updateDeliveryDraft(order.id, filePatchFromInput(event, 'delivery'))}
+            />
+            <span>
+              {draft.deliveryFileName
+                ? `${draft.deliveryFileName} ${draft.deliveryFileSize ? `(${draft.deliveryFileSize})` : ''}`
+                : 'No file selected'}
+            </span>
+          </label>
           <button className="primary-button" onClick={() => onDeliverOrder(order.id)} disabled={!hasDeliveryContent}>
             <Upload size={18} />
             Submit delivery
@@ -1433,6 +1556,12 @@ function OrderCard({
           <p>{order.deliveryMessage}</p>
           {order.deliveryLink && (
             <span className="delivery-link"><LinkIcon size={15} /> {order.deliveryLink}</span>
+          )}
+          {order.deliveryFileName && (
+            <span className="delivery-link">
+              <Paperclip size={15} />
+              {order.deliveryFileName} {order.deliveryFileSize ? `(${order.deliveryFileSize})` : ''}
+            </span>
           )}
           <button className="secondary-button" onClick={() => onConfirmDelivery(order.id)}>
             Confirm delivery
@@ -1687,6 +1816,23 @@ function NavItem({ icon, label, active, onClick }) {
       <span>{label}</span>
     </button>
   );
+}
+
+function filePatchFromInput(event, scope = 'request') {
+  const file = event.target.files?.[0];
+  const fileNameKey = scope === 'delivery' ? 'deliveryFileName' : 'fileName';
+  const fileSizeKey = scope === 'delivery' ? 'deliveryFileSize' : 'fileSize';
+
+  return {
+    [fileNameKey]: file?.name || '',
+    [fileSizeKey]: file ? formatFileSize(file.size) : '',
+  };
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default App;
