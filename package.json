@@ -1,0 +1,36 @@
+{
+  "name": "pideal-lite",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:frontend": "vite --host 127.0.0.1",
+    "dev:backend": "node server/index.js",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "start": "node server/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:apply": "prisma db execute --file prisma/migrations/20260514195100_init/migration.sql --schema prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "prisma db seed",
+    "test:backend": "node server/smokeTest.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "lucide-react": "^0.561.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.4"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3"
+  }
+}

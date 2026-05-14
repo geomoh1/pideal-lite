@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id
+  username        String
+  role            String    @default("user")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  services        Service[]
+  buyerOrders     Order[]   @relation("OrderBuyer")
+  sellerOrders    Order[]   @relation("OrderSeller")
+  reviewsGiven    Review[]  @relation("ReviewBuyer")
+  reviewsReceived Review[]  @relation("ReviewSeller")
+  reports         Report[]
+}
+
+model Service {
+  id           String   @id
+  title        String
+  category     String
+  summary      String?
+  pricePi      Float    @default(0)
+  depositPi    Float    @default(0)
+  deliveryDays Int      @default(1)
+  status       String   @default("pending")
+  sellerId     String
+  seller       User     @relation(fields: [sellerId], references: [id])
+  orders       Order[]
+  reviews      Review[]
+  reports      Report[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([sellerId])
+  @@index([status])
+}
+
+model Order {
+  id              String    @id
+  serviceId       String?
+  service         Service?  @relation(fields: [serviceId], references: [id])
+  buyerId         String?
+  buyer           User?     @relation("OrderBuyer", fields: [buyerId], references: [id])
+  sellerId        String?
+  seller          User?     @relation("OrderSeller", fields: [sellerId], references: [id])
+  buyerName       String?
+  sellerName      String?
+  status          String    @default("Pending Payment")
+  paymentMode     String?
+  amountPi        Float?
+  platformFeePi   Float?
+  paidAt          DateTime?
+  deliveryMessage String?
+  deliveryLink    String?
+  payments        Payment[]
+  review          Review?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([serviceId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+}
+
+model Payment {
+  id            String   @id
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  serviceId     String?
+  amountPi      Float?
+  mode          String?
+  txid          String?
+  status        String   @default("approval_requested")
+  piPaymentJson String?
+  mock          Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id])
+  serviceId String?
+  service   Service? @relation(fields: [serviceId], references: [id])
+  buyerId   String?
+  buyer     User?    @relation("ReviewBuyer", fields: [buyerId], references: [id])
+  sellerId  String?
+  seller    User?    @relation("ReviewSeller", fields: [sellerId], references: [id])
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@index([serviceId])
+  @@index([sellerId])
+}
+
+model Report {
+  id           String   @id @default(cuid())
+  serviceId    String?
+  service      Service? @relation(fields: [serviceId], references: [id])
+  reporterId   String?
+  reporter     User?    @relation(fields: [reporterId], references: [id])
+  serviceTitle String
+  reason       String
+  status       String   @default("open")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([serviceId])
+  @@index([status])
+}
