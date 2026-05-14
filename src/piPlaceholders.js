@@ -80,6 +80,7 @@ async function createLocalMockPayment({
     buyerName,
     sellerId,
     sellerName,
+    demoMode: true,
   });
   const completion = await completePiPayment({ paymentId, txid, orderId });
 
@@ -114,6 +115,8 @@ export async function authenticateWithPi() {
       username: 'pioneer.demo',
       accessToken: 'local-placeholder-access-token',
       walletStatus: 'Local Pi SDK fallback',
+      authProvider: 'local-fallback',
+      demoMode: true,
     };
   }
 
@@ -130,6 +133,8 @@ export async function authenticateWithPi() {
     username: auth.user.username,
     accessToken: auth.accessToken,
     walletStatus: 'Official Pi SDK connected',
+    authProvider: 'pi-sdk',
+    demoMode: false,
   };
 }
 
@@ -142,10 +147,11 @@ export async function createPiDepositPayment({
   buyerName,
   sellerId,
   sellerName,
+  demoMode = false,
 }) {
   const pi = getPiSdk();
 
-  if (!pi?.createPayment) {
+  if (demoMode || !pi?.createPayment) {
     return createLocalMockPayment({
       orderId,
       serviceId,
@@ -256,6 +262,7 @@ export async function approvePiPayment({
   buyerName,
   sellerId,
   sellerName,
+  demoMode = false,
 }) {
   return postJson(`/api/pi/payments/${encodeURIComponent(paymentId)}/approve`, {
     orderId,
@@ -266,6 +273,7 @@ export async function approvePiPayment({
     buyerName,
     sellerId,
     sellerName,
+    demoMode,
   });
 }
 

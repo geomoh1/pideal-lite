@@ -136,9 +136,13 @@ npm run dev:frontend
 
 The Vite dev server proxies `/api` to `http://127.0.0.1:4000`.
 
-## Demo users
+## Demo testing
 
-The local fallback UI includes quick demo account buttons so buyer, seller, and admin paths can be tested without changing Pi SDK code:
+The app includes clearly labeled demo account buttons for pre-submission testing on local development and deployed frontend builds such as Vercel or Netlify.
+
+Demo buttons are shown until real `Pi.authenticate(...)` succeeds. After a real Pi SDK user is connected, the demo buttons are hidden and the official Pi auth path remains untouched.
+
+Demo mode does not require Pi Browser or Pi App Studio. It sends `demoMode=true` to the payment backend so demo payments use mock approval and mock completion while still preserving the backend rule that an order only becomes `Paid` after completion.
 
 - Buyer: `ali.pi` (`buyer-ali`)
 - Seller: `pioneer.demo` (`pi-user-placeholder`)
@@ -168,6 +172,7 @@ Frontend on Vercel or Netlify:
 - Environment variable: `VITE_API_BASE_URL=https://your-deployed-backend`
 - Rebuild the frontend after changing `VITE_API_BASE_URL`; Vite embeds this value at build time.
 - The frontend is a single-page app. Pi auth and payment calls still stay isolated in `src/piPlaceholders.js`.
+- Before Pi App Studio submission, open the deployed frontend in a normal mobile browser and confirm Demo Buyer, Demo Seller, and Demo Admin can complete their flows without Pi Browser.
 
 Backend on Render or Railway:
 
@@ -194,6 +199,9 @@ SQLite production limitation:
 - Confirm Pi Login uses the official SDK in Pi Browser and local fallback outside Pi Browser.
 - Confirm payment creation opens the official Pi payment flow in Pi Browser.
 - Confirm `VITE_API_BASE_URL` points to the deployed backend outside local development.
+- Confirm the deployed app shows Demo Buyer, Demo Seller, and Demo Admin before real Pi auth succeeds.
+- Confirm demo payments stay in mock mode on the deployed backend.
+- Confirm demo buttons disappear after a real Pi SDK authentication succeeds.
 - Confirm `PI_API_KEY` is configured on the backend host.
 - Confirm `PI_USE_MOCK_PAYMENTS=false` in production.
 - Confirm database persistence survives backend restart or redeploy.

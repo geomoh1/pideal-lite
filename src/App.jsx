@@ -225,20 +225,23 @@ const demoUsers = [
   {
     uid: 'buyer-ali',
     username: 'ali.pi',
-    role: 'Buyer',
-    walletStatus: 'Local demo buyer with an active order.',
+    role: 'Demo Buyer',
+    targetRole: 'Buyer',
+    walletStatus: 'Demo buyer account. No Pi Browser required.',
   },
   {
     uid: 'pi-user-placeholder',
     username: 'pioneer.demo',
-    role: 'Seller',
-    walletStatus: 'Local demo seller with work to deliver.',
+    role: 'Demo Seller',
+    targetRole: 'Seller',
+    walletStatus: 'Demo seller account. Payments stay in mock mode.',
   },
   {
     uid: 'admin-lina',
     username: 'lina.admin',
-    role: 'Admin',
-    walletStatus: 'Local demo admin for moderation review.',
+    role: 'Demo Admin',
+    targetRole: 'Admin',
+    walletStatus: 'Demo admin account for moderation testing.',
   },
 ];
 
@@ -331,21 +334,23 @@ function App() {
       username: demoUser.username,
       accessToken: 'local-demo-access-token',
       walletStatus: demoUser.walletStatus,
+      authProvider: 'demo',
+      demoMode: true,
     });
-    setSelectedRole(demoUser.role);
+    setSelectedRole(demoUser.targetRole);
     setFlowError('');
     setFlowNotice(`Demo account active: ${demoUser.username}.`);
 
-    if (demoUser.role === 'Buyer') {
+    if (demoUser.targetRole === 'Buyer') {
       setOrderTab('buyer');
     }
 
-    if (demoUser.role === 'Seller') {
+    if (demoUser.targetRole === 'Seller') {
       setOrderTab('seller');
       setActiveView('orders');
     }
 
-    if (demoUser.role === 'Admin') {
+    if (demoUser.targetRole === 'Admin') {
       setActiveView('admin');
     }
   }
@@ -458,6 +463,7 @@ function App() {
         buyerName: order.buyerName,
         sellerId: order.sellerId,
         sellerName: order.sellerName,
+        demoMode: user?.demoMode === true,
       });
       if (paymentResult.order?.status !== ORDER_STATUS.PAID) {
         throw new Error('Payment server did not mark this order as paid.');
@@ -748,7 +754,8 @@ function App() {
 }
 
 function PiAccessStrip({ user, selectedRole, piIntegrationStatus, onLogin, onDemoUser }) {
-  const showDemoUsers = piIntegrationStatus.mode === 'local-mock-fallback';
+  const isRealPiUser = user?.authProvider === 'pi-sdk';
+  const showDemoUsers = !isRealPiUser;
 
   return (
     <section className="wallet-strip">
@@ -757,22 +764,25 @@ function PiAccessStrip({ user, selectedRole, piIntegrationStatus, onLogin, onDem
           <span className="eyebrow">Pi Browser ready</span>
           <p>
             {user
-              ? `Signed in as ${user.username}. Active role: ${selectedRole}.`
-              : `Connect with Pi. Mode: ${piIntegrationStatus.mode}.`}
+              ? `${isRealPiUser ? 'Signed in' : 'Testing'} as ${user.username}. Active role: ${selectedRole}.`
+              : `Use Pi Login when available, or choose a demo account for testing. Mode: ${piIntegrationStatus.mode}.`}
           </p>
         </div>
         {showDemoUsers && (
-          <div className="demo-account-switch" aria-label="Demo accounts">
-            {demoUsers.map((demoUser) => (
-              <button
-                key={demoUser.uid}
-                className={user?.uid === demoUser.uid ? 'demo-user-button active' : 'demo-user-button'}
-                onClick={() => onDemoUser(demoUser)}
-              >
-                <span>{demoUser.role}</span>
-                <strong>{demoUser.username}</strong>
-              </button>
-            ))}
+          <div className="demo-panel">
+            <span className="demo-label">Demo/testing accounts - no Pi Browser required</span>
+            <div className="demo-account-switch" aria-label="Demo testing accounts">
+              {demoUsers.map((demoUser) => (
+                <button
+                  key={demoUser.uid}
+                  className={user?.uid === demoUser.uid ? 'demo-user-button active' : 'demo-user-button'}
+                  onClick={() => onDemoUser(demoUser)}
+                >
+                  <span>{demoUser.role}</span>
+                  <strong>{demoUser.username}</strong>
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

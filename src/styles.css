@@ -177,6 +177,19 @@ select:focus-visible {
   scrollbar-width: none;
 }
 
+.demo-panel {
+  display: grid;
+  gap: 7px;
+}
+
+.demo-label {
+  color: #f5c56f;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .demo-account-switch::-webkit-scrollbar {
   display: none;
 }

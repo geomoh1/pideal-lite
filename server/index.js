@@ -70,7 +70,9 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
       amountPi: paymentRequest.amountPi,
     });
 
-    const piPayment = USE_MOCK_PAYMENTS
+    const useMockPayment = USE_MOCK_PAYMENTS || paymentRequest.demoMode;
+
+    const piPayment = useMockPayment
       ? createMockPaymentDto({ ...paymentRequest, phase: 'approved' })
       : await callPiPlatform(`/payments/${encodeURIComponent(paymentId)}/approve`);
 
@@ -108,7 +110,7 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
           amountPi: paymentRequest.amountPi,
           mode: paymentRequest.mode,
           status: 'approved',
-          mock: USE_MOCK_PAYMENTS,
+          mock: useMockPayment,
           piPaymentJson: stringifyJson(piPayment),
         },
         update: {
@@ -117,7 +119,7 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
           amountPi: paymentRequest.amountPi,
           mode: paymentRequest.mode,
           status: 'approved',
-          mock: USE_MOCK_PAYMENTS,
+          mock: useMockPayment,
           piPaymentJson: stringifyJson(piPayment),
         },
       });
@@ -127,7 +129,7 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
 
     return response.json({
       ok: true,
-      mock: USE_MOCK_PAYMENTS,
+      mock: useMockPayment,
       payment: serializePayment(payment),
       order: serializeOrder(order),
       piPayment,
@@ -163,7 +165,9 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
       return response.status(409).json({ ok: false, error: 'Payment must be approved before completion.' });
     }
 
-    const piPayment = USE_MOCK_PAYMENTS
+    const useMockPayment = USE_MOCK_PAYMENTS || existingPayment.mock;
+
+    const piPayment = useMockPayment
       ? createMockPaymentDto({
           paymentId,
           orderId,
@@ -181,7 +185,7 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
         data: {
           txid,
           status: 'completed',
-          mock: USE_MOCK_PAYMENTS,
+          mock: useMockPayment,
           piPaymentJson: stringifyJson(piPayment),
         },
       });
@@ -202,7 +206,7 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
 
     return response.json({
       ok: true,
-      mock: USE_MOCK_PAYMENTS,
+      mock: useMockPayment,
       payment: serializePayment(payment),
       order: serializeOrder(order),
       piPayment,

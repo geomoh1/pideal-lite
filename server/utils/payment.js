@@ -17,6 +17,7 @@ export function normalizePaymentRequest(paymentId, body = {}) {
     buyerName: body.buyerName || null,
     sellerId: body.sellerId || null,
     sellerName: body.sellerName || null,
+    demoMode: body.demoMode === true,
   };
 }
 

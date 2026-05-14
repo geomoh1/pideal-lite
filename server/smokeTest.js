@@ -12,7 +12,9 @@ const server = spawn(process.execPath, ['server/index.js'], {
   env: {
     ...process.env,
     PORT: '4000',
-    PI_USE_MOCK_PAYMENTS: 'true',
+    NODE_ENV: 'production',
+    PI_API_KEY: '',
+    PI_USE_MOCK_PAYMENTS: 'false',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,
@@ -40,9 +42,11 @@ try {
     buyerName: 'smoke.buyer',
     sellerId: 'smoke-seller',
     sellerName: 'smoke.seller',
+    demoMode: true,
   });
 
   assertEqual(approval.order.status, 'Pending Payment', 'Approval must not mark order as Paid.');
+  assertEqual(approval.mock, true, 'Demo approval must stay in mock mode.');
 
   const beforeCompletion = await getJson(`/api/orders/${orderId}/status`);
   assertEqual(beforeCompletion.order.status, 'Pending Payment', 'Stored order must remain Pending Payment before completion.');
@@ -53,14 +57,18 @@ try {
   });
 
   assertEqual(completion.order.status, 'Paid', 'Completion must mark order as Paid.');
+  assertEqual(completion.mock, true, 'Demo completion must stay in mock mode.');
 
   const afterCompletion = await getJson(`/api/orders/${orderId}/status`);
   assertEqual(afterCompletion.order.status, 'Paid', 'Stored order must persist Paid after completion.');
 
   console.log(JSON.stringify({
     health: health.database,
+    piPaymentsMode: health.piPaymentsMode,
+    approvalMock: approval.mock,
     approvalStatus: approval.order.status,
     beforeCompletionStatus: beforeCompletion.order.status,
+    completionMock: completion.mock,
     completionStatus: completion.order.status,
     persistedStatus: afterCompletion.order.status,
   }, null, 2));
