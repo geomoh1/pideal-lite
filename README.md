@@ -136,6 +136,21 @@ npm run dev:frontend
 
 The Vite dev server proxies `/api` to `http://127.0.0.1:4000`.
 
+## Demo users
+
+The local fallback UI includes quick demo account buttons so buyer, seller, and admin paths can be tested without changing Pi SDK code:
+
+- Buyer: `ali.pi` (`buyer-ali`)
+- Seller: `pioneer.demo` (`pi-user-placeholder`)
+- Admin: `lina.admin` (`admin-lina`)
+
+The Prisma seed also creates additional marketplace test users:
+
+- Sellers: `maha.pi`, `pixelcare`, `faris.lang`, `devdesk`
+- Buyers: `nora.pi`, `sami.pi`
+
+Seed data includes approved services, one pending listing, orders across the main statuses, completed mock payments, one review, and one admin report.
+
 Backend smoke test:
 
 ```bash

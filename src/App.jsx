@@ -221,6 +221,35 @@ const blankService = {
   terms: '',
 };
 
+const demoUsers = [
+  {
+    uid: 'buyer-ali',
+    username: 'ali.pi',
+    role: 'Buyer',
+    walletStatus: 'Local demo buyer with an active order.',
+  },
+  {
+    uid: 'pi-user-placeholder',
+    username: 'pioneer.demo',
+    role: 'Seller',
+    walletStatus: 'Local demo seller with work to deliver.',
+  },
+  {
+    uid: 'admin-lina',
+    username: 'lina.admin',
+    role: 'Admin',
+    walletStatus: 'Local demo admin for moderation review.',
+  },
+];
+
+const orderFlowSteps = [
+  { status: ORDER_STATUS.PENDING_PAYMENT, label: 'Pay' },
+  { status: ORDER_STATUS.PAID, label: 'Paid' },
+  { status: ORDER_STATUS.IN_PROGRESS, label: 'Work' },
+  { status: ORDER_STATUS.DELIVERED, label: 'Delivery' },
+  { status: ORDER_STATUS.COMPLETED, label: 'Rating' },
+];
+
 function App() {
   const [user, setUser] = useState(null);
   const [activeView, setActiveView] = useState('home');
@@ -237,6 +266,7 @@ function App() {
   const [adminTab, setAdminTab] = useState('services');
   const [deliveryDrafts, setDeliveryDrafts] = useState({});
   const [flowError, setFlowError] = useState('');
+  const [flowNotice, setFlowNotice] = useState('');
   const piIntegrationStatus = getPiIntegrationStatus();
 
   const currentUserId = user?.uid;
@@ -282,15 +312,42 @@ function App() {
       const piUser = await authenticateWithPi();
       setUser(piUser);
       setFlowError('');
+      setFlowNotice(`Connected as ${piUser.username}.`);
       return piUser;
     } catch {
       setFlowError('Pi login failed. Open in Pi Browser or check the official Pi SDK setup.');
+      setFlowNotice('');
       return null;
     }
   }
 
   async function handlePiLogin() {
     await getAuthenticatedPiUser();
+  }
+
+  function handleDemoUser(demoUser) {
+    setUser({
+      uid: demoUser.uid,
+      username: demoUser.username,
+      accessToken: 'local-demo-access-token',
+      walletStatus: demoUser.walletStatus,
+    });
+    setSelectedRole(demoUser.role);
+    setFlowError('');
+    setFlowNotice(`Demo account active: ${demoUser.username}.`);
+
+    if (demoUser.role === 'Buyer') {
+      setOrderTab('buyer');
+    }
+
+    if (demoUser.role === 'Seller') {
+      setOrderTab('seller');
+      setActiveView('orders');
+    }
+
+    if (demoUser.role === 'Admin') {
+      setActiveView('admin');
+    }
   }
 
   function openService(serviceId) {
@@ -329,6 +386,8 @@ function App() {
 
     setServices((current) => [listing, ...current]);
     setNewService(blankService);
+    setFlowError('');
+    setFlowNotice('Service submitted for admin review.');
     setActiveView('admin');
     setAdminTab('services');
   }
@@ -341,11 +400,13 @@ function App() {
 
     if (service.sellerId === buyer.uid) {
       setFlowError('This is your own listing. Buyer requests will appear in Orders > Selling.');
+      setFlowNotice('');
       return;
     }
 
     if (activeOrder) {
       setFlowError('You already have an active order for this service.');
+      setFlowNotice('');
       return;
     }
 
@@ -368,7 +429,9 @@ function App() {
     };
 
     setFlowError('');
+    setFlowNotice('Order created. Choose a deposit or full payment to continue.');
     setOrders((current) => [order, ...current]);
+    setRequestNote('');
   }
 
   async function handlePayOrder(orderId, mode) {
@@ -377,6 +440,7 @@ function App() {
     if (!order || !service) return;
     if (order.status !== ORDER_STATUS.PENDING_PAYMENT) {
       setFlowError('This order is not waiting for payment.');
+      setFlowNotice('');
       return;
     }
 
@@ -405,9 +469,11 @@ function App() {
           ? error.message
           : 'Pi payment could not be completed. Open in Pi Browser and configure official server-side approval/completion.',
       );
+      setFlowNotice('');
       return;
     }
 
+    setFlowNotice('Payment completed by the backend. The seller can start work now.');
     setOrders((current) =>
       current.map((item) =>
         item.id === orderId
@@ -427,6 +493,7 @@ function App() {
   }
 
   function handleStartOrder(orderId) {
+    setFlowNotice('Order moved to In Progress.');
     setOrders((current) =>
       current.map((order) =>
         order.id === orderId && order.status === ORDER_STATUS.PAID
@@ -450,6 +517,7 @@ function App() {
 
   function handleDeliverOrder(orderId) {
     const draft = deliveryDrafts[orderId] ?? {};
+    setFlowNotice('Delivery submitted. Waiting for buyer confirmation.');
     setOrders((current) =>
       current.map((order) =>
         order.id === orderId && order.status === ORDER_STATUS.IN_PROGRESS
@@ -468,6 +536,7 @@ function App() {
     const order = orders.find((item) => item.id === orderId);
     if (order?.status !== ORDER_STATUS.DELIVERED) {
       setFlowError('Delivery can only be confirmed after the seller submits work.');
+      setFlowNotice('');
       return;
     }
 
@@ -477,9 +546,11 @@ function App() {
       setFlowError('');
     } catch {
       setFlowError('Delivery confirmation failed. Recheck the official Pi completion flow later.');
+      setFlowNotice('');
       return;
     }
 
+    setFlowNotice('Delivery confirmed. You can rate the seller now.');
     setOrders((current) =>
       current.map((order) =>
         order.id === orderId ? { ...order, status: ORDER_STATUS.COMPLETED } : order,
@@ -488,12 +559,14 @@ function App() {
   }
 
   function handleRateOrder(orderId, rating) {
+    setFlowNotice(`Seller rated ${rating} stars.`);
     setOrders((current) =>
       current.map((order) => (order.id === orderId ? { ...order, rating } : order)),
     );
   }
 
   function handleCancelOrder(orderId) {
+    setFlowNotice('Order cancelled.');
     setOrders((current) =>
       current.map((order) =>
         order.id === orderId ? { ...order, status: ORDER_STATUS.CANCELLED } : order,
@@ -502,6 +575,7 @@ function App() {
   }
 
   function handleDisputeOrder(orderId) {
+    setFlowNotice('Order marked as disputed for admin review.');
     setOrders((current) =>
       current.map((order) =>
         order.id === orderId ? { ...order, status: ORDER_STATUS.DISPUTED } : order,
@@ -510,6 +584,7 @@ function App() {
   }
 
   function moderateService(serviceId, nextStatus) {
+    setFlowNotice(`Service ${nextStatus}.`);
     setServices((current) =>
       current.map((service) =>
         service.id === serviceId ? { ...service, status: nextStatus } : service,
@@ -518,10 +593,12 @@ function App() {
   }
 
   function removeService(serviceId) {
+    setFlowNotice('Service removed from moderation.');
     setServices((current) => current.filter((service) => service.id !== serviceId));
   }
 
   function reportService(service) {
+    setFlowNotice('Report sent to admin moderation.');
     setReports((current) => [
       {
         id: `report-${Date.now()}`,
@@ -535,6 +612,7 @@ function App() {
   }
 
   function resolveReport(reportId) {
+    setFlowNotice('Report resolved.');
     setReports((current) =>
       current.map((report) =>
         report.id === reportId ? { ...report, status: 'resolved' } : report,
@@ -563,8 +641,10 @@ function App() {
           selectedRole={selectedRole}
           piIntegrationStatus={piIntegrationStatus}
           onLogin={handlePiLogin}
+          onDemoUser={handleDemoUser}
         />
         {flowError && <FlowError message={flowError} />}
+        {flowNotice && <FlowNotice message={flowNotice} />}
 
         {activeView === 'home' && (
           <HomeView
@@ -667,16 +747,34 @@ function App() {
   );
 }
 
-function PiAccessStrip({ user, selectedRole, piIntegrationStatus, onLogin }) {
+function PiAccessStrip({ user, selectedRole, piIntegrationStatus, onLogin, onDemoUser }) {
+  const showDemoUsers = piIntegrationStatus.mode === 'local-mock-fallback';
+
   return (
     <section className="wallet-strip">
-      <div>
-        <span className="eyebrow">Pi Browser ready</span>
-        <p>
-          {user
-            ? `Signed in as ${user.username}. Active role: ${selectedRole}.`
-            : `Connect with Pi. Mode: ${piIntegrationStatus.mode}.`}
-        </p>
+      <div className="wallet-copy">
+        <div>
+          <span className="eyebrow">Pi Browser ready</span>
+          <p>
+            {user
+              ? `Signed in as ${user.username}. Active role: ${selectedRole}.`
+              : `Connect with Pi. Mode: ${piIntegrationStatus.mode}.`}
+          </p>
+        </div>
+        {showDemoUsers && (
+          <div className="demo-account-switch" aria-label="Demo accounts">
+            {demoUsers.map((demoUser) => (
+              <button
+                key={demoUser.uid}
+                className={user?.uid === demoUser.uid ? 'demo-user-button active' : 'demo-user-button'}
+                onClick={() => onDemoUser(demoUser)}
+              >
+                <span>{demoUser.role}</span>
+                <strong>{demoUser.username}</strong>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <button className="primary-button compact" onClick={onLogin}>
         {user ? <BadgeCheck size={17} /> : <LogIn size={17} />}
@@ -690,6 +788,15 @@ function FlowError({ message }) {
   return (
     <div className="flow-error" role="alert">
       <AlertTriangle size={18} />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function FlowNotice({ message }) {
+  return (
+    <div className="flow-notice" role="status">
+      <CheckCircle2 size={18} />
       <span>{message}</span>
     </div>
   );
@@ -941,6 +1048,7 @@ function OrderProgress({
         <strong>{order.status}</strong>
         <p>{order.buyerNote || 'No buyer note added.'}</p>
       </div>
+      <StatusTimeline status={order.status} />
 
       {order.status === ORDER_STATUS.PENDING_PAYMENT && (
         <div className="payment-actions">
@@ -987,13 +1095,34 @@ function OrderProgress({
   );
 }
 
+function StatusTimeline({ status }) {
+  const activeIndex = orderFlowSteps.findIndex((step) => step.status === status);
+  const isStopped = [ORDER_STATUS.DISPUTED, ORDER_STATUS.CANCELLED].includes(status);
+
+  return (
+    <div className={isStopped ? 'status-timeline stopped' : 'status-timeline'} aria-label="Order progress">
+      {orderFlowSteps.map((step, index) => {
+        const isComplete = activeIndex >= 0 && index <= activeIndex;
+        return (
+          <span key={step.status} className={isComplete ? 'timeline-step active' : 'timeline-step'}>
+            {step.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) {
+  const pricePi = Number(newService.pricePi);
+  const depositPi = Number(newService.depositPi);
   const canSubmit =
     newService.title.trim() &&
     newService.summary.trim() &&
     newService.terms.trim() &&
-    Number(newService.pricePi) > 0 &&
-    Number(newService.depositPi) > 0 &&
+    pricePi > 0 &&
+    depositPi > 0 &&
+    depositPi <= pricePi &&
     Number(newService.deliveryDays) > 0;
 
   function updateField(field, value) {
@@ -1060,6 +1189,9 @@ function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) 
             />
           </label>
         </div>
+        {depositPi > pricePi && (
+          <p className="field-hint">Deposit should be equal to or lower than the full price.</p>
+        )}
 
         <div className="form-row">
           <label>
@@ -1223,6 +1355,7 @@ function OrderCard({
   const hasDeliveryContent = Boolean(
     draft.deliveryMessage?.trim() || draft.deliveryLink?.trim(),
   );
+  const counterpart = mode === 'seller' ? `Buyer: ${order.buyerName}` : `Seller: ${order.sellerName}`;
 
   return (
     <article className="order-card">
@@ -1230,7 +1363,7 @@ function OrderCard({
         <span>{service.title}</span>
         <StatusBadge status={order.status} />
       </button>
-      <p>{order.buyerNote || 'No buyer note added.'}</p>
+      <p>{counterpart}. {order.buyerNote || 'No buyer note added.'}</p>
       <div className="order-meta-grid">
         <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
         <Metric label="Fee 5%" value={`${order.platformFeePi || 0} Pi`} />
@@ -1240,10 +1373,10 @@ function OrderCard({
       {mode === 'buyer' && order.status === ORDER_STATUS.PENDING_PAYMENT && (
         <div className="payment-actions">
           <button className="primary-button" onClick={() => onPay(order.id, 'deposit')}>
-            Pay deposit
+            Pay {service.depositPi} Pi deposit
           </button>
           <button className="secondary-button" onClick={() => onPay(order.id, 'full')}>
-            Pay full
+            Pay {service.pricePi} Pi full
           </button>
           <button className="ghost-button small" onClick={() => onCancelOrder(order.id)}>
             Cancel
