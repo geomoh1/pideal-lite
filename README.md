@@ -14,6 +14,7 @@ PiDeal Lite is a mobile-first React marketplace for Pi Browser where Pi Network 
 - SQLite persistence through Prisma for users, services, orders, payments, reviews, and reports
 - API-driven frontend state for services, orders, delivery, reviews, and reports
 - Loading and error states for backend API calls
+- Arabic/English UI with automatic device-language detection and a user language switcher
 - Buying and selling order tabs for the same user account
 - Seller delivery message/link placeholder
 - Delivery confirmation
@@ -232,6 +233,15 @@ The Prisma seed also creates additional marketplace test users:
 - Users with sample orders: `nora.pi`, `sami.pi`
 
 Seed data includes approved services, one pending listing, orders across the main statuses, completed mock payments, one review, and one admin report.
+
+## Language support
+
+PiDeal Lite detects the device/browser language on first visit:
+
+- Arabic device language opens the UI in Arabic with RTL direction.
+- Other languages open the UI in English.
+- The language selector in the top bar lets the user switch between English and Arabic.
+- The selected language is saved locally in the browser so the user preference wins over device language on later visits.
 
 ## Admin access
 

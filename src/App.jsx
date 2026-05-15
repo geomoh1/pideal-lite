@@ -49,6 +49,14 @@ import {
   updateSellerStatus as updateSellerStatusApi,
   updateServiceStatus,
 } from './api.js';
+import {
+  getInitialLanguage,
+  I18nProvider,
+  isRtlLanguage,
+  localizeTree,
+  saveLanguagePreference,
+  useLocale,
+} from './i18n.js';
 
 const ORDER_STATUS = {
   PENDING_PAYMENT: 'Pending Payment',
@@ -131,6 +139,7 @@ const orderFlowSteps = [
 ];
 
 function App() {
+  const [language, setLanguage] = useState(getInitialLanguage);
   const [user, setUser] = useState(null);
   const [activeView, setActiveView] = useState('home');
   const [selectedMode, setSelectedMode] = useState('Browse');
@@ -151,9 +160,16 @@ function App() {
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
   const [marketplaceError, setMarketplaceError] = useState('');
   const piIntegrationStatus = getPiIntegrationStatus();
+  const appDirection = isRtlLanguage(language) ? 'rtl' : 'ltr';
 
   const currentUserId = user?.uid;
   const isAdmin = user?.appRole === 'admin';
+
+  useEffect(() => {
+    saveLanguagePreference(language);
+    document.documentElement.lang = language;
+    document.documentElement.dir = appDirection;
+  }, [appDirection, language]);
 
   useEffect(() => {
     let isMounted = true;
@@ -675,7 +691,9 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <I18nProvider language={language}>
+      <Localized>
+        <div className="app-shell" lang={language} dir={appDirection}>
       <header className="top-bar">
         <button className="brand-button" onClick={() => setActiveView('home')} aria-label="PiDeal home">
           <span className="brand-mark">Pi</span>
@@ -684,9 +702,12 @@ function App() {
             <small>Buy and sell digital services with Pi.</small>
           </span>
         </button>
-        <button className="icon-button" aria-label="Notifications">
-          <Bell size={19} />
-        </button>
+        <div className="top-actions">
+          <LanguageSwitch language={language} onLanguageChange={setLanguage} />
+          <button className="icon-button" aria-label="Notifications">
+            <Bell size={19} />
+          </button>
+        </div>
       </header>
 
       <main>
@@ -809,7 +830,28 @@ function App() {
         <NavItem icon={<UserRound size={20} />} label="Profile" active={activeView === 'profile'} onClick={() => setActiveView('profile')} />
         {isAdmin && <NavItem icon={<Gauge size={20} />} label="Admin" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />}
       </nav>
-    </div>
+        </div>
+      </Localized>
+    </I18nProvider>
+  );
+}
+
+function Localized({ children }) {
+  const { language } = useLocale();
+  return localizeTree(children, language);
+}
+
+function LanguageSwitch({ language, onLanguageChange }) {
+  return (
+    <Localized>
+    <label className="language-switch" aria-label="Language">
+      <span>Language</span>
+      <select value={language} onChange={(event) => onLanguageChange(event.target.value)}>
+        <option value="en">English</option>
+        <option value="ar">Arabic</option>
+      </select>
+    </label>
+    </Localized>
   );
 }
 
@@ -818,6 +860,7 @@ function PiAccessStrip({ user, selectedMode, piIntegrationStatus, onLogin, onDem
   const showDemoUsers = !isRealPiUser;
 
   return (
+    <Localized>
     <section className="wallet-strip">
       <div className="wallet-copy">
         <div>
@@ -851,33 +894,40 @@ function PiAccessStrip({ user, selectedMode, piIntegrationStatus, onLogin, onDem
         {user ? 'Connected' : 'Pi Login'}
       </button>
     </section>
+    </Localized>
   );
 }
 
 function FlowError({ message }) {
   return (
+    <Localized>
     <div className="flow-error" role="alert">
       <AlertTriangle size={18} />
       <span>{message}</span>
     </div>
+    </Localized>
   );
 }
 
 function FlowNotice({ message }) {
   return (
+    <Localized>
     <div className="flow-notice" role="status">
       <CheckCircle2 size={18} />
       <span>{message}</span>
     </div>
+    </Localized>
   );
 }
 
 function LoadingState({ message }) {
   return (
+    <Localized>
     <div className="empty-state loading-state" role="status">
       <Clock3 size={24} />
       <p>{message}</p>
     </div>
+    </Localized>
   );
 }
 
@@ -892,6 +942,7 @@ function HomeView({
   openService,
 }) {
   return (
+    <Localized>
     <section className="view-stack">
       <div className="home-hero">
         <div>
@@ -952,11 +1003,13 @@ function HomeView({
         </div>
       )}
     </section>
+    </Localized>
   );
 }
 
 function ServiceSection({ title, services, openService }) {
   return (
+    <Localized>
     <section className="compact-section">
       <div className="section-heading tight">
         <h2>{title}</h2>
@@ -975,11 +1028,13 @@ function ServiceSection({ title, services, openService }) {
         ))}
       </div>
     </section>
+    </Localized>
   );
 }
 
 function ServiceCard({ service, onClick }) {
   return (
+    <Localized>
     <button className="service-card" onClick={onClick}>
       <div className="service-art" style={{ '--accent': service.accent }}>
         <span>{service.icon}</span>
@@ -998,6 +1053,7 @@ function ServiceCard({ service, onClick }) {
         </div>
       </div>
     </button>
+    </Localized>
   );
 }
 
@@ -1023,6 +1079,7 @@ function DetailView({
   const isBlockedSeller = service.sellerStatus === 'blocked';
 
   return (
+    <Localized>
     <section className="view-stack">
       <button className="ghost-button back-button" onClick={onBack}>
         <ChevronLeft size={18} />
@@ -1162,6 +1219,7 @@ function DetailView({
         )}
       </section>
     </section>
+    </Localized>
   );
 }
 
@@ -1176,6 +1234,7 @@ function OrderProgress({
   canConfirm,
 }) {
   return (
+    <Localized>
     <div className="order-status">
       <div>
         <span className="eyebrow">Order status</span>
@@ -1233,6 +1292,7 @@ function OrderProgress({
         />
       )}
     </div>
+    </Localized>
   );
 }
 
@@ -1241,6 +1301,7 @@ function StatusTimeline({ status }) {
   const isStopped = [ORDER_STATUS.DISPUTED, ORDER_STATUS.REFUNDED, ORDER_STATUS.CANCELLED].includes(status);
 
   return (
+    <Localized>
     <div className={isStopped ? 'status-timeline stopped' : 'status-timeline'} aria-label="Order progress">
       {orderFlowSteps.map((step, index) => {
         const isComplete = activeIndex >= 0 && index <= activeIndex;
@@ -1251,6 +1312,7 @@ function StatusTimeline({ status }) {
         );
       })}
     </div>
+    </Localized>
   );
 }
 
@@ -1262,6 +1324,7 @@ function OrderMaterials({ order }) {
   if (!hasMaterials) return null;
 
   return (
+    <Localized>
     <div className="material-list">
       <span className="eyebrow">Buyer materials</span>
       {order.requestSourceText && <p>{order.requestSourceText}</p>}
@@ -1278,6 +1341,7 @@ function OrderMaterials({ order }) {
         </span>
       )}
     </div>
+    </Localized>
   );
 }
 
@@ -1300,6 +1364,7 @@ function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) 
   }
 
   return (
+    <Localized>
     <section className="view-stack">
       <div className="section-heading">
         <div>
@@ -1334,7 +1399,7 @@ function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) 
             onChange={(event) => updateField('category', event.target.value)}
           >
             {categories.filter((category) => category !== 'All').map((category) => (
-              <option key={category}>{category}</option>
+              <option key={category} value={category}>{category}</option>
             ))}
           </select>
         </label>
@@ -1473,6 +1538,7 @@ function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) 
         </button>
       </form>
     </section>
+    </Localized>
   );
 }
 
@@ -1498,6 +1564,7 @@ function OrdersView({
   const visibleOrders = orderTab === 'buyer' ? buyerOrders : sellerOrders;
 
   return (
+    <Localized>
     <section className="view-stack">
       <div className="section-heading">
         <div>
@@ -1554,6 +1621,7 @@ function OrdersView({
         )}
       </div>
     </section>
+    </Localized>
   );
 }
 
@@ -1578,6 +1646,7 @@ function OrderCard({
   const counterpart = mode === 'seller' ? `Buyer: ${order.buyerName}` : `Seller: ${order.sellerName}`;
 
   return (
+    <Localized>
     <article className="order-card">
       <button className="order-title" onClick={() => openService(service.id)}>
         <span>{service.title}</span>
@@ -1676,6 +1745,7 @@ function OrderCard({
         <RatingControl rating={order.rating} onRate={(rating) => onRateOrder(order.id, rating)} compact />
       )}
     </article>
+    </Localized>
   );
 }
 
@@ -1700,6 +1770,7 @@ function ProfileView({
     : 'New';
 
   return (
+    <Localized>
     <section className="view-stack">
       <div className="profile-panel">
         <div className="profile-avatar">
@@ -1750,11 +1821,13 @@ function ProfileView({
         {userServices.length === 0 && <p className="muted-line">No services listed by this user yet.</p>}
       </section>
     </section>
+    </Localized>
   );
 }
 
 function AdminGate({ user, onLogin }) {
   return (
+    <Localized>
     <section className="view-stack">
       <div className="inline-callout">
         <ShieldCheck size={18} />
@@ -1770,6 +1843,7 @@ function AdminGate({ user, onLogin }) {
         <p>Only users with role admin in the backend database can review, approve, reject, block, or remove services.</p>
       </div>
     </section>
+    </Localized>
   );
 }
 
@@ -1791,6 +1865,7 @@ function AdminView({
   const openReports = reports.filter((report) => report.status === 'open');
 
   return (
+    <Localized>
     <section className="view-stack">
       <div className="section-heading">
         <div>
@@ -1904,35 +1979,45 @@ function AdminView({
         </div>
       )}
     </section>
+    </Localized>
   );
 }
 
 function Metric({ label, value }) {
   return (
+    <Localized>
     <div className="metric-card">
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+    </Localized>
   );
 }
 
 function StatusBadge({ status }) {
   const isGood = [ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(status);
   const isRisk = [ORDER_STATUS.DISPUTED, ORDER_STATUS.REFUNDED, ORDER_STATUS.CANCELLED].includes(status);
-  return <span className={isRisk ? 'status risk' : isGood ? 'status success' : 'status'}>{status}</span>;
+  return (
+    <Localized>
+      <span className={isRisk ? 'status risk' : isGood ? 'status success' : 'status'}>{status}</span>
+    </Localized>
+  );
 }
 
 function StatusHint({ icon, text }) {
   return (
+    <Localized>
     <div className="status-hint">
       {icon}
       <span>{text}</span>
     </div>
+    </Localized>
   );
 }
 
 function RatingControl({ rating, onRate, compact = false }) {
   return (
+    <Localized>
     <div className={compact ? 'rating-control compact-rating' : 'rating-control'}>
       {!compact && <span className="eyebrow">Seller rating</span>}
       <div>
@@ -1948,15 +2033,18 @@ function RatingControl({ rating, onRate, compact = false }) {
         ))}
       </div>
     </div>
+    </Localized>
   );
 }
 
 function NavItem({ icon, label, active, onClick }) {
   return (
+    <Localized>
     <button className={active ? 'nav-item active' : 'nav-item'} onClick={onClick}>
       {icon}
       <span>{label}</span>
     </button>
+    </Localized>
   );
 }
 
