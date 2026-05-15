@@ -130,8 +130,8 @@ select:focus-visible {
 
 .brand-logo {
   display: block;
-  width: clamp(152px, 48vw, 196px);
-  height: 74px;
+  width: clamp(166px, 52vw, 216px);
+  height: 82px;
   flex: 0 0 auto;
   object-fit: contain;
 }
@@ -1334,8 +1334,8 @@ textarea {
 
 @media (max-width: 390px) {
   .brand-logo {
-    width: 138px;
-    height: 66px;
+    width: 150px;
+    height: 72px;
   }
 
   .language-switch span {
