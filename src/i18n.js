@@ -311,6 +311,10 @@ const arPatterns = [
     render: ([, amount]) => `ادفع المتبقي ${amount} Pi`,
   },
   {
+    pattern: /^Fee (.+)$/,
+    render: ([, percent]) => `عمولة ${percent}`,
+  },
+  {
     pattern: /^Pay (.+) Pi full$/,
     render: ([, amount]) => `ادفع كامل المبلغ ${amount} Pi`,
   },

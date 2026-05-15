@@ -9,6 +9,8 @@ import {
   createMockPaymentDto,
   normalizePaymentMode,
   calculatePlatformFee,
+  getPlatformFeePercentLabel,
+  getPlatformFeeRate,
   serializeOrder,
   serializePayment,
   serializeReport,
@@ -70,6 +72,8 @@ app.get('/api/health', async (request, response, next) => {
       service: 'pideal-lite-api',
       database: 'sqlite-prisma',
       piPaymentsMode: USE_MOCK_PAYMENTS ? 'mock' : 'pi-platform-api',
+      platformFeeRate: getPlatformFeeRate(),
+      platformFeePercent: getPlatformFeePercentLabel(),
     });
   } catch (error) {
     return next(error);

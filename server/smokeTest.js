@@ -18,6 +18,7 @@ const server = spawn(process.execPath, ['server/index.js'], {
     NODE_ENV: 'production',
     PI_API_KEY: '',
     PI_USE_MOCK_PAYMENTS: 'false',
+    PLATFORM_FEE_RATE: '0.03',
     DATABASE_URL: process.env.DATABASE_URL || 'file:./dev.db',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -50,6 +51,7 @@ try {
   });
 
   const health = await waitForHealth();
+  assertEqual(health.platformFeePercent, '3%', 'Backend must read PLATFORM_FEE_RATE from the environment.');
   const demoAdminSession = await postJson('/api/session', {
     uid: 'admin-lina',
     username: 'lina.admin',
@@ -189,6 +191,8 @@ try {
   assertEqual(completion.order.status, 'Deposit Paid', 'Deposit completion must not mark the full order completed.');
   assertEqual(completion.order.paidPi, 4, 'Deposit completion must record only the paid deposit.');
   assertEqual(completion.order.remainingPi, 6, 'Deposit completion must keep the remaining balance due.');
+  assertEqual(completion.order.platformFeePi, 0.12, 'Deposit fee must use PLATFORM_FEE_RATE.');
+  assertEqual(completion.order.platformFeePercent, '3%', 'Order responses must expose the active platform fee label.');
   assertEqual(completion.mock, true, 'Demo completion must stay in mock mode.');
 
   const started = await postJson(`/api/orders/${orderId}/start`, {});
@@ -225,6 +229,7 @@ try {
   });
   assertEqual(balanceCompletion.order.status, 'Completed', 'Remaining balance completion must complete the order.');
   assertEqual(balanceCompletion.order.paidPi, 10, 'Completed order must show the full paid service price.');
+  assertEqual(balanceCompletion.order.platformFeePi, 0.3, 'Final fee must use PLATFORM_FEE_RATE on total paid amount.');
 
   const reviewed = await postJson(`/api/orders/${orderId}/review`, { rating: 5 });
   assertEqual(reviewed.order.rating, 5, 'Review rating must persist on the order response.');

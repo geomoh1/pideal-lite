@@ -57,7 +57,7 @@ Admin placeholder -> Review Services -> Approve/Reject -> Monitor Orders -> Reso
 
 ## Business model placeholder
 
-The MVP shows a simple `5%` platform commission on successful paid orders.
+The MVP uses `PLATFORM_FEE_RATE=0.05` by default, which means a `5%` platform commission on successful paid orders. Change this backend environment value to adjust the fee without code changes.
 
 ## Trust and escrow
 
@@ -183,6 +183,7 @@ PI_API_KEY=
 FRONTEND_ORIGIN=http://localhost:5173
 FRONTEND_ORIGINS=
 DEMO_ADMIN_IDS=admin-lina
+PLATFORM_FEE_RATE=0.05
 PI_USE_MOCK_PAYMENTS=true
 ```
 

@@ -55,7 +55,17 @@ function getPaymentMemoMode(mode) {
 
 export function calculatePlatformFee(amountPi) {
   if (!Number.isFinite(Number(amountPi))) return null;
-  return Number((Number(amountPi) * 0.05).toFixed(2));
+  return Number((Number(amountPi) * getPlatformFeeRate()).toFixed(2));
+}
+
+export function getPlatformFeeRate() {
+  const rate = Number(process.env.PLATFORM_FEE_RATE ?? 0.05);
+  if (!Number.isFinite(rate) || rate < 0) return 0.05;
+  return rate;
+}
+
+export function getPlatformFeePercentLabel() {
+  return `${Number((getPlatformFeeRate() * 100).toFixed(2))}%`;
 }
 
 export function serializeService(service) {
@@ -129,6 +139,8 @@ export function serializeOrder(order) {
     paidPi: paidTotal,
     remainingPi,
     platformFeePi: order.platformFeePi ?? calculatePlatformFee(paidTotal) ?? 0,
+    platformFeeRate: getPlatformFeeRate(),
+    platformFeePercent: getPlatformFeePercentLabel(),
     paidAt: order.paidAt,
     buyerNote: order.buyerNote || '',
     requestSourceText: order.requestSourceText || '',

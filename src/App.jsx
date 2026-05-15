@@ -978,6 +978,8 @@ function HomeView({
   latestServices,
   openService,
 }) {
+  const platformFeePercent = latestServices[0]?.platformFeePercent ?? featuredServices[0]?.platformFeePercent ?? '5%';
+
   return (
     <Localized>
     <section className="view-stack">
@@ -988,7 +990,7 @@ function HomeView({
           <p>Browse, order, pay a mock Pi deposit, receive delivery, confirm, and rate.</p>
         </div>
         <div className="hero-metrics">
-          <Metric label="Commission" value="5%" />
+          <Metric label="Commission" value={platformFeePercent} />
           <Metric label="Scope" value="Digital only" />
         </div>
       </div>
@@ -1708,7 +1710,7 @@ function OrderCard({
       <div className="order-meta-grid">
         <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
         <Metric label="Remaining" value={`${remainingPi} Pi`} />
-        <Metric label="Fee 5%" value={`${order.platformFeePi || 0} Pi`} />
+        <Metric label={`Fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
       </div>
 
       {mode === 'seller' && order.status === ORDER_STATUS.REQUESTED && (
@@ -2009,7 +2011,7 @@ function AdminView({
                 <p>Buyer: {order.buyerName} · Seller: {order.sellerName}</p>
                 <div className="order-meta-grid">
                   <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
-                  <Metric label="Fee 5%" value={`${order.platformFeePi || 0} Pi`} />
+                  <Metric label={`Fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
                   <Metric label="Created" value={order.createdAt} />
                 </div>
                 {order.status === ORDER_STATUS.DISPUTED && (
