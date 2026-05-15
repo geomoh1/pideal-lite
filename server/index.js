@@ -68,6 +68,21 @@ app.get('/api/health', async (request, response, next) => {
   }
 });
 
+app.post('/api/session', async (request, response, next) => {
+  try {
+    const uid = requiredString(request.body?.uid, 'uid');
+    const username = requiredString(request.body?.username, 'username');
+    const user = await ensureUser(uid, username, 'user');
+
+    return response.json({
+      ok: true,
+      user: serializeUser(user),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.get('/api/services', async (request, response, next) => {
   try {
     const services = await prisma.service.findMany({
@@ -116,7 +131,7 @@ app.post('/api/services', async (request, response, next) => {
   }
 });
 
-app.post('/api/services/:serviceId/status', async (request, response, next) => {
+app.post('/api/services/:serviceId/status', requireAdmin, async (request, response, next) => {
   try {
     const nextStatus = String(request.body?.status || '').trim();
     if (!['approved', 'pending', 'rejected', 'blocked'].includes(nextStatus)) {
@@ -135,7 +150,7 @@ app.post('/api/services/:serviceId/status', async (request, response, next) => {
   }
 });
 
-app.post('/api/services/:serviceId/remove', async (request, response, next) => {
+app.post('/api/services/:serviceId/remove', requireAdmin, async (request, response, next) => {
   try {
     const service = await prisma.service.update({
       where: { id: request.params.serviceId },
@@ -385,7 +400,7 @@ app.post('/api/reports', async (request, response, next) => {
   }
 });
 
-app.post('/api/reports/:reportId/resolve', async (request, response, next) => {
+app.post('/api/reports/:reportId/resolve', requireAdmin, async (request, response, next) => {
   try {
     const report = await prisma.report.update({
       where: { id: request.params.reportId },
@@ -664,6 +679,46 @@ async function findOrderById(orderId) {
     where: { id: orderId },
     include: ORDER_INCLUDE,
   });
+}
+
+async function requireAdmin(request, response, next) {
+  try {
+    const actorUserId = getActorUserId(request);
+
+    if (!actorUserId) {
+      return response.status(401).json({ ok: false, error: 'Admin user id is required.' });
+    }
+
+    const actor = await prisma.user.findUnique({
+      where: { id: actorUserId },
+    });
+
+    if (actor?.role !== 'admin') {
+      return response.status(403).json({ ok: false, error: 'Only admins can moderate services and reports.' });
+    }
+
+    request.actor = actor;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+function getActorUserId(request) {
+  return (
+    request.get('x-pideal-user-id') ||
+    request.body?.actorUserId ||
+    request.query?.actorUserId ||
+    ''
+  ).trim();
+}
+
+function serializeUser(user) {
+  return {
+    uid: user.id,
+    username: user.username,
+    role: user.role,
+  };
 }
 
 async function refreshServiceRating(serviceId) {

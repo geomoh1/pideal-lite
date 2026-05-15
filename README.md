@@ -191,6 +191,23 @@ The Prisma seed also creates additional marketplace test users:
 
 Seed data includes approved services, one pending listing, orders across the main statuses, completed mock payments, one review, and one admin report.
 
+## Admin access
+
+Admin moderation is controlled by the backend database, not by the role switcher in the React UI.
+
+- The seeded demo admin is `lina.admin` with user id `admin-lina`.
+- Only users with `User.role = "admin"` can approve, reject, block, remove services, or resolve reports.
+- The frontend hides the Admin tab for non-admin users.
+- The backend also rejects moderation requests from non-admin users.
+
+To make a real Pi user an admin after their first login creates a `User` row, update that user's role in the production database:
+
+```sql
+UPDATE User SET role = 'admin' WHERE id = '<real-pi-user-uid>';
+```
+
+For SQLite local testing, you can run the same SQL against `prisma/dev.db` with your preferred SQLite tool. In production, do this in the managed database/admin console. This MVP guard still needs official Pi access-token verification before a public launch; the role must ultimately be tied to a verified Pi identity, not a browser-controlled value.
+
 Backend smoke test:
 
 ```bash

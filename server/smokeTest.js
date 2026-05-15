@@ -34,6 +34,19 @@ server.stderr.on('data', (chunk) => {
 });
 
 try {
+  await prisma.user.upsert({
+    where: { id: 'admin-lina' },
+    update: {
+      username: 'lina.admin',
+      role: 'admin',
+    },
+    create: {
+      id: 'admin-lina',
+      username: 'lina.admin',
+      role: 'admin',
+    },
+  });
+
   const health = await waitForHealth();
   const createdService = await postJson('/api/services', {
     id: serviceId,
@@ -54,7 +67,14 @@ try {
 
   assertEqual(createdService.service.status, 'pending', 'New services must start pending.');
 
-  const approvedService = await postJson(`/api/services/${serviceId}/status`, { status: 'approved' });
+  const rejectedModeration = await postJsonExpectFailure(`/api/services/${serviceId}/status`, { status: 'approved' });
+  assertEqual(rejectedModeration.status, 401, 'Service moderation must require an admin actor.');
+
+  const approvedService = await postJson(
+    `/api/services/${serviceId}/status`,
+    { status: 'approved' },
+    { actorUserId: 'admin-lina' },
+  );
   assertEqual(approvedService.service.status, 'approved', 'Service approval must persist.');
 
   const services = await getJson('/api/services');
@@ -130,7 +150,14 @@ try {
   });
   assertEqual(report.report.status, 'open', 'Reports must start open.');
 
-  const resolvedReport = await postJson(`/api/reports/${report.report.id}/resolve`, {});
+  const rejectedReportResolve = await postJsonExpectFailure(`/api/reports/${report.report.id}/resolve`, {});
+  assertEqual(rejectedReportResolve.status, 401, 'Report resolution must require an admin actor.');
+
+  const resolvedReport = await postJson(
+    `/api/reports/${report.report.id}/resolve`,
+    {},
+    { actorUserId: 'admin-lina' },
+  );
   assertEqual(resolvedReport.report.status, 'resolved', 'Reports must be resolvable.');
 
   const afterCompletion = await getJson(`/api/orders/${orderId}/status`);
@@ -176,16 +203,35 @@ async function getJson(path) {
   return parseResponse(response);
 }
 
-async function postJson(path, body) {
+async function postJson(path, body, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(options.actorUserId ? { 'X-PiDeal-User-Id': options.actorUserId } : {}),
     },
     body: JSON.stringify(body),
   });
 
   return parseResponse(response);
+}
+
+async function postJsonExpectFailure(path, body, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.actorUserId ? { 'X-PiDeal-User-Id': options.actorUserId } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => null);
+
+  if (response.ok || data?.ok) {
+    throw new Error(`Expected ${path} to fail, but it succeeded.`);
+  }
+
+  return { status: response.status, data };
 }
 
 async function parseResponse(response) {

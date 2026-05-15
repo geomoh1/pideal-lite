@@ -43,6 +43,7 @@ import {
   resolveReportById,
   reviewOrder as reviewOrderApi,
   startOrder as startOrderApi,
+  syncUserSession,
   updateServiceStatus,
 } from './api.js';
 
@@ -143,6 +144,7 @@ function App() {
   const piIntegrationStatus = getPiIntegrationStatus();
 
   const currentUserId = user?.uid;
+  const isAdmin = user?.appRole === 'admin';
 
   useEffect(() => {
     let isMounted = true;
@@ -243,18 +245,30 @@ function App() {
     );
   }
 
+  async function attachServerRole(authenticatedUser) {
+    const sessionUser = await syncUserSession(authenticatedUser);
+    return {
+      ...authenticatedUser,
+      appRole: sessionUser.role,
+    };
+  }
+
   async function getAuthenticatedPiUser() {
     if (user) return user;
 
     // Official Pi auth must stay inside src/piPlaceholders.js.
     try {
       const piUser = await authenticateWithPi();
-      setUser(piUser);
+      const sessionUser = await attachServerRole(piUser);
+      setUser(sessionUser);
+      if (sessionUser.appRole !== 'admin' && selectedRole === 'Admin') {
+        setSelectedRole('Buyer');
+      }
       setFlowError('');
-      setFlowNotice(`Connected as ${piUser.username}.`);
-      return piUser;
-    } catch {
-      setFlowError('Pi login failed. Open in Pi Browser or check the official Pi SDK setup.');
+      setFlowNotice(`Connected as ${sessionUser.username}.`);
+      return sessionUser;
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Pi login failed. Open in Pi Browser or check the official Pi SDK setup.'));
       setFlowNotice('');
       return null;
     }
@@ -264,29 +278,42 @@ function App() {
     await getAuthenticatedPiUser();
   }
 
-  function handleDemoUser(demoUser) {
-    setUser({
+  async function handleDemoUser(demoUser) {
+    const demoSession = {
       uid: demoUser.uid,
       username: demoUser.username,
       accessToken: 'local-demo-access-token',
       walletStatus: demoUser.walletStatus,
       authProvider: 'demo',
       demoMode: true,
-    });
-    setSelectedRole(demoUser.targetRole);
+    };
+
+    let nextUser;
+    try {
+      nextUser = await attachServerRole(demoSession);
+    } catch {
+      nextUser = {
+        ...demoSession,
+        appRole: demoUser.uid === 'admin-lina' ? 'admin' : demoUser.targetRole.toLowerCase(),
+      };
+    }
+
+    const targetRole = nextUser.appRole === 'admin' ? demoUser.targetRole : demoUser.targetRole === 'Admin' ? 'Buyer' : demoUser.targetRole;
+    setUser(nextUser);
+    setSelectedRole(targetRole);
     setFlowError('');
     setFlowNotice(`Demo account active: ${demoUser.username}.`);
 
-    if (demoUser.targetRole === 'Buyer') {
+    if (targetRole === 'Buyer') {
       setOrderTab('buyer');
     }
 
-    if (demoUser.targetRole === 'Seller') {
+    if (targetRole === 'Seller') {
       setOrderTab('seller');
       setActiveView('orders');
     }
 
-    if (demoUser.targetRole === 'Admin') {
+    if (targetRole === 'Admin' && nextUser.appRole === 'admin') {
       setActiveView('admin');
     }
   }
@@ -331,8 +358,11 @@ function App() {
       setNewService(blankService);
       setFlowError('');
       setFlowNotice('Service submitted for admin review.');
-      setActiveView('admin');
-      setAdminTab('services');
+      setSelectedRole('Seller');
+      setActiveView(isAdmin ? 'admin' : 'profile');
+      if (isAdmin) {
+        setAdminTab('services');
+      }
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Service could not be submitted to the backend.'));
       setFlowNotice('');
@@ -537,7 +567,7 @@ function App() {
 
   async function moderateService(serviceId, nextStatus) {
     try {
-      const updatedService = await updateServiceStatus(serviceId, nextStatus);
+      const updatedService = await updateServiceStatus(serviceId, nextStatus, user);
       setFlowNotice(`Service ${nextStatus}.`);
       setFlowError('');
       replaceService(updatedService);
@@ -549,7 +579,7 @@ function App() {
 
   async function removeService(serviceId) {
     try {
-      await removeServiceById(serviceId);
+      await removeServiceById(serviceId, user);
       setFlowNotice('Service removed from moderation.');
       setFlowError('');
       setServices((current) => current.filter((service) => service.id !== serviceId));
@@ -579,7 +609,7 @@ function App() {
 
   async function resolveReport(reportId) {
     try {
-      const report = await resolveReportById(reportId);
+      const report = await resolveReportById(reportId, user);
       setFlowNotice('Report resolved.');
       setFlowError('');
       replaceReport(report);
@@ -686,6 +716,7 @@ function App() {
             user={user}
             selectedRole={selectedRole}
             setSelectedRole={setSelectedRole}
+            isAdmin={isAdmin}
             userServices={userServices}
             buyerOrders={userBuyerOrders}
             sellerOrders={userSellerOrders}
@@ -695,17 +726,21 @@ function App() {
         )}
 
         {!isInitialMarketplaceLoading && activeView === 'admin' && (
-          <AdminView
-            adminTab={adminTab}
-            setAdminTab={setAdminTab}
-            services={services}
-            orders={orders}
-            reports={reports}
-            moderateService={moderateService}
-            removeService={removeService}
-            resolveReport={resolveReport}
-            openService={openService}
-          />
+          isAdmin ? (
+            <AdminView
+              adminTab={adminTab}
+              setAdminTab={setAdminTab}
+              services={services}
+              orders={orders}
+              reports={reports}
+              moderateService={moderateService}
+              removeService={removeService}
+              resolveReport={resolveReport}
+              openService={openService}
+            />
+          ) : (
+            <AdminGate user={user} onLogin={handlePiLogin} />
+          )
         )}
       </main>
 
@@ -714,7 +749,7 @@ function App() {
         <NavItem icon={<FilePlus2 size={20} />} label="Sell" active={activeView === 'add'} onClick={() => setActiveView('add')} />
         <NavItem icon={<BriefcaseBusiness size={20} />} label="Orders" active={activeView === 'orders'} onClick={() => setActiveView('orders')} />
         <NavItem icon={<UserRound size={20} />} label="Profile" active={activeView === 'profile'} onClick={() => setActiveView('profile')} />
-        <NavItem icon={<Gauge size={20} />} label="Admin" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
+        {isAdmin && <NavItem icon={<Gauge size={20} />} label="Admin" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />}
       </nav>
     </div>
   );
@@ -1517,12 +1552,14 @@ function ProfileView({
   user,
   selectedRole,
   setSelectedRole,
+  isAdmin,
   userServices,
   buyerOrders,
   sellerOrders,
   onLogin,
   openService,
 }) {
+  const profileRoles = isAdmin ? ['Buyer', 'Seller', 'Admin'] : ['Buyer', 'Seller'];
   const completedOrders = [...buyerOrders, ...sellerOrders].filter(
     (order) => order.status === ORDER_STATUS.COMPLETED,
   );
@@ -1551,7 +1588,7 @@ function ProfileView({
       </div>
 
       <div className="segmented role-switch">
-        {['Buyer', 'Seller', 'Admin'].map((role) => (
+        {profileRoles.map((role) => (
           <button key={role} className={selectedRole === role ? 'active' : ''} onClick={() => setSelectedRole(role)}>
             {role}
           </button>
@@ -1581,6 +1618,26 @@ function ProfileView({
         ))}
         {userServices.length === 0 && <p className="muted-line">No services listed by this user yet.</p>}
       </section>
+    </section>
+  );
+}
+
+function AdminGate({ user, onLogin }) {
+  return (
+    <section className="view-stack">
+      <div className="inline-callout">
+        <ShieldCheck size={18} />
+        <span>
+          {user
+            ? 'This PiDeal account is not assigned as an admin.'
+            : 'Admin moderation requires a PiDeal admin account.'}
+        </span>
+        {!user && <button className="secondary-button small" onClick={onLogin}>Login</button>}
+      </div>
+      <div className="empty-state">
+        <Gauge size={24} />
+        <p>Only users with role admin in the backend database can review, approve, reject, block, or remove services.</p>
+      </div>
     </section>
   );
 }

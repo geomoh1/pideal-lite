@@ -38,6 +38,18 @@ function postJson(path, body) {
   });
 }
 
+function postJsonAs(path, body, actor) {
+  return requestJson(path, {
+    method: 'POST',
+    headers: actorHeaders(actor),
+    body: JSON.stringify(body),
+  });
+}
+
+function actorHeaders(actor) {
+  return actor?.uid ? { 'X-PiDeal-User-Id': actor.uid } : {};
+}
+
 export async function fetchMarketplaceData() {
   const [servicesData, ordersData, reportsData] = await Promise.all([
     requestJson('/api/services'),
@@ -52,18 +64,26 @@ export async function fetchMarketplaceData() {
   };
 }
 
+export async function syncUserSession(user) {
+  const data = await postJson('/api/session', {
+    uid: user.uid,
+    username: user.username,
+  });
+  return data.user;
+}
+
 export async function createService(listing) {
   const data = await postJson('/api/services', listing);
   return data.service;
 }
 
-export async function updateServiceStatus(serviceId, status) {
-  const data = await postJson(`/api/services/${encodeURIComponent(serviceId)}/status`, { status });
+export async function updateServiceStatus(serviceId, status, actor) {
+  const data = await postJsonAs(`/api/services/${encodeURIComponent(serviceId)}/status`, { status }, actor);
   return data.service;
 }
 
-export async function removeServiceById(serviceId) {
-  const data = await postJson(`/api/services/${encodeURIComponent(serviceId)}/remove`, {});
+export async function removeServiceById(serviceId, actor) {
+  const data = await postJsonAs(`/api/services/${encodeURIComponent(serviceId)}/remove`, {}, actor);
   return data.service;
 }
 
@@ -102,8 +122,8 @@ export async function createReport(report) {
   return data.report;
 }
 
-export async function resolveReportById(reportId) {
-  const data = await postJson(`/api/reports/${encodeURIComponent(reportId)}/resolve`, {});
+export async function resolveReportById(reportId, actor) {
+  const data = await postJsonAs(`/api/reports/${encodeURIComponent(reportId)}/resolve`, {}, actor);
   return data.report;
 }
 
