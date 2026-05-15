@@ -16,8 +16,6 @@
     </filter>
   </defs>
 
-  <rect width="1024" height="1024" fill="#ffffff"/>
-
   <g filter="url(#softShadow)">
     <path
       fill="url(#purple)"
