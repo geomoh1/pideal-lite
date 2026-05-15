@@ -28,6 +28,9 @@ const DEMO_ADMIN_IDS = (process.env.DEMO_ADMIN_IDS || 'admin-lina')
   .split(',')
   .map((id) => id.trim())
   .filter(Boolean);
+const PI_ADMIN_USERNAMES = parseEnvList(process.env.PI_ADMIN_USERNAMES ?? 'mohammedabobaker')
+  .map(normalizePiUsername)
+  .filter(Boolean);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 const ORDER_STATUS = {
@@ -85,9 +88,9 @@ app.post('/api/session', async (request, response, next) => {
   try {
     const accessToken = String(request.body?.accessToken || '').trim();
     const sessionIdentity = accessToken
-      ? await verifyPiAccessToken(accessToken)
+      ? { ...(await verifyPiAccessToken(accessToken)), verifiedPi: true }
       : getDemoSessionIdentity(request.body || {});
-    const role = getSessionRole(sessionIdentity.uid, request.body || {});
+    const role = getSessionRole(sessionIdentity, request.body || {});
     const user = await ensureUser(sessionIdentity.uid, sessionIdentity.username, role);
 
     return response.json({
@@ -929,14 +932,32 @@ function serializeUser(user) {
   };
 }
 
-function getSessionRole(uid, body) {
-  const isDemoAdmin = body.demoMode === true && DEMO_ADMIN_IDS.includes(uid);
+function getSessionRole(sessionIdentity, body) {
+  const isDemoAdmin = body.demoMode === true && DEMO_ADMIN_IDS.includes(sessionIdentity.uid);
+  const isConfiguredPiAdmin =
+    sessionIdentity.verifiedPi === true &&
+    PI_ADMIN_USERNAMES.includes(normalizePiUsername(sessionIdentity.username));
 
   if (!IS_PRODUCTION && USE_MOCK_PAYMENTS && isDemoAdmin) {
     return 'admin';
   }
 
+  if (isConfiguredPiAdmin) {
+    return 'admin';
+  }
+
   return 'user';
+}
+
+function parseEnvList(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizePiUsername(username) {
+  return String(username || '').trim().replace(/^@/, '').toLowerCase();
 }
 
 function getDemoSessionIdentity(body) {

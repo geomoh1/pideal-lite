@@ -26,6 +26,7 @@ const server = spawn(process.execPath, ['server/index.js'], {
     PI_API_KEY: '',
     PI_API_BASE_URL: piApiBaseUrl,
     PI_USE_MOCK_PAYMENTS: 'false',
+    PI_ADMIN_USERNAMES: 'mohammedabobaker',
     PLATFORM_FEE_RATE: '0.03',
     DATABASE_URL: process.env.DATABASE_URL || 'file:./dev.db',
   },
@@ -88,6 +89,25 @@ try {
   });
   assertEqual(verifiedAdminSession.user.uid, 'verified-admin', 'Admin auth must use the verified Pi uid.');
   assertEqual(verifiedAdminSession.user.role, 'admin', 'Existing admin role must be preserved after Pi auth.');
+
+  const configuredAdminSession = await postJson('/api/session', {
+    accessToken: 'valid-configured-admin-token',
+  });
+  assertEqual(
+    configuredAdminSession.user.uid,
+    'verified-mohammed',
+    'Configured Pi admin username must still use the verified Pi uid.',
+  );
+  assertEqual(
+    configuredAdminSession.user.username,
+    'mohammedabobaker',
+    'Configured Pi admin username must come from the verified Pi profile.',
+  );
+  assertEqual(
+    configuredAdminSession.user.role,
+    'admin',
+    'Configured Pi admin username must receive role admin after token verification.',
+  );
 
   const demoAdminSession = await postJson('/api/session', {
     uid: 'admin-lina',
@@ -364,6 +384,12 @@ function createPiApiMockServer() {
       return;
     }
 
+    if (token === 'valid-configured-admin-token') {
+      response.writeHead(200);
+      response.end(JSON.stringify({ uid: 'verified-mohammed', username: 'mohammedabobaker' }));
+      return;
+    }
+
     response.writeHead(401);
     response.end(JSON.stringify({ error: 'invalid_token' }));
   });
@@ -531,6 +557,6 @@ async function cleanupSmokeData() {
     where: { id: smokeServiceFilter },
   });
   await prisma.user.deleteMany({
-    where: { id: { in: ['smoke-buyer', 'smoke-seller', 'verified-user', 'verified-admin'] } },
+    where: { id: { in: ['smoke-buyer', 'smoke-seller', 'verified-user', 'verified-admin', 'verified-mohammed'] } },
   });
 }

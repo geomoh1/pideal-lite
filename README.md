@@ -185,6 +185,7 @@ PI_API_KEY=
 FRONTEND_ORIGIN=http://localhost:5173
 FRONTEND_ORIGINS=
 DEMO_ADMIN_IDS=admin-lina
+PI_ADMIN_USERNAMES=mohammedabobaker
 PLATFORM_FEE_RATE=0.05
 PI_USE_MOCK_PAYMENTS=true
 ```
@@ -257,11 +258,12 @@ Admin moderation is controlled by the backend database, not by the mode switcher
 
 - The seeded demo admin is `lina.admin` with user id `admin-lina`.
 - In mock/demo mode, `DEMO_ADMIN_IDS=admin-lina` also allows the deployed demo backend to recognize Demo Admin even if the database was not seeded first.
+- A verified Pi user whose username is listed in `PI_ADMIN_USERNAMES` is created/returned as `admin` after the backend verifies the Pi access token. The current configured admin username is `mohammedabobaker`; set `PI_ADMIN_USERNAMES=` to disable username-based admin bootstrapping after setup.
 - Only users with `User.role = "admin"` can approve, reject, block, remove services, or resolve reports.
 - The frontend hides the Admin tab for non-admin users.
 - The backend also rejects moderation requests from non-admin users.
 
-To make a real Pi user an admin after their first login creates a `User` row, update that user's role in the production database:
+To make a real Pi user an admin after their first login creates a `User` row, either add the verified Pi username to `PI_ADMIN_USERNAMES` before login or update that user's role in the production database:
 
 ```sql
 UPDATE User SET role = 'admin' WHERE id = '<real-pi-user-uid>';
@@ -324,6 +326,7 @@ SQLite production limitation:
 - Confirm demo buttons disappear after a real Pi SDK authentication succeeds.
 - Confirm the Pi App Studio app domain matches the deployed frontend domain before expecting production Pi SDK auth to work.
 - Confirm `PI_API_KEY` is configured on the backend host.
+- Confirm `PI_ADMIN_USERNAMES=mohammedabobaker` is configured on the backend host if this Pi account should be the production admin.
 - Confirm `PI_USE_MOCK_PAYMENTS=false` in production.
 - Confirm database persistence survives backend restart or redeploy.
 - Confirm backend server-side approval and completion are configured before treating real Pi payments as settled.
