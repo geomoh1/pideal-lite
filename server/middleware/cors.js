@@ -12,7 +12,7 @@ export function allowLocalDevCors(request, response, next) {
   if (isAllowedOrigin(origin)) {
     response.setHeader('Access-Control-Allow-Origin', origin);
     response.setHeader('Vary', 'Origin');
-    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-PiDeal-User-Id');
     response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   }
 
