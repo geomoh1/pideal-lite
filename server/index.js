@@ -22,6 +22,10 @@ const PORT = Number(process.env.PORT || 4000);
 const USE_MOCK_PAYMENTS =
   process.env.PI_USE_MOCK_PAYMENTS === 'true' ||
   (!process.env.PI_API_KEY && process.env.NODE_ENV !== 'production');
+const DEMO_ADMIN_IDS = (process.env.DEMO_ADMIN_IDS || 'admin-lina')
+  .split(',')
+  .map((id) => id.trim())
+  .filter(Boolean);
 
 const ORDER_STATUS = {
   PENDING_PAYMENT: 'Pending Payment',
@@ -72,7 +76,12 @@ app.post('/api/session', async (request, response, next) => {
   try {
     const uid = requiredString(request.body?.uid, 'uid');
     const username = requiredString(request.body?.username, 'username');
-    const user = await ensureUser(uid, username, 'user');
+    const role = getSessionRole(uid, request.body || {});
+    const user = await prisma.user.upsert({
+      where: { id: uid },
+      create: { id: uid, username, role },
+      update: role === 'admin' ? { username, role } : { username },
+    });
 
     return response.json({
       ok: true,
@@ -719,6 +728,16 @@ function serializeUser(user) {
     username: user.username,
     role: user.role,
   };
+}
+
+function getSessionRole(uid, body) {
+  const isDemoAdmin = body.demoMode === true && DEMO_ADMIN_IDS.includes(uid);
+
+  if (USE_MOCK_PAYMENTS && isDemoAdmin) {
+    return 'admin';
+  }
+
+  return 'user';
 }
 
 async function refreshServiceRating(serviceId) {

@@ -135,6 +135,7 @@ PI_API_BASE_URL=https://api.minepi.com/v2
 PI_API_KEY=
 FRONTEND_ORIGIN=http://localhost:5173
 FRONTEND_ORIGINS=
+DEMO_ADMIN_IDS=admin-lina
 PI_USE_MOCK_PAYMENTS=true
 ```
 
@@ -196,6 +197,7 @@ Seed data includes approved services, one pending listing, orders across the mai
 Admin moderation is controlled by the backend database, not by the role switcher in the React UI.
 
 - The seeded demo admin is `lina.admin` with user id `admin-lina`.
+- In mock/demo mode, `DEMO_ADMIN_IDS=admin-lina` also allows the deployed demo backend to recognize Demo Admin even if the database was not seeded first.
 - Only users with `User.role = "admin"` can approve, reject, block, remove services, or resolve reports.
 - The frontend hides the Admin tab for non-admin users.
 - The backend also rejects moderation requests from non-admin users.

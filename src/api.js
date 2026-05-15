@@ -68,6 +68,8 @@ export async function syncUserSession(user) {
   const data = await postJson('/api/session', {
     uid: user.uid,
     username: user.username,
+    authProvider: user.authProvider,
+    demoMode: user.demoMode === true,
   });
   return data.user;
 }

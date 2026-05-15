@@ -48,6 +48,13 @@ try {
   });
 
   const health = await waitForHealth();
+  const demoAdminSession = await postJson('/api/session', {
+    uid: 'admin-lina',
+    username: 'lina.admin',
+    demoMode: true,
+  });
+  assertEqual(demoAdminSession.user.role, 'admin', 'Demo Admin session must resolve to admin in mock mode.');
+
   const createdService = await postJson('/api/services', {
     id: serviceId,
     title: 'Smoke test logo sprint',
