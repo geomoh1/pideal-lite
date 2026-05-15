@@ -11,7 +11,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "start": "node server/index.js",
     "prisma:generate": "prisma generate",
-    "prisma:apply": "prisma db execute --file prisma/migrations/20260514195100_init/migration.sql --schema prisma/schema.prisma",
+    "prisma:apply": "node prisma/applyMigrations.js",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
     "test:backend": "node server/smokeTest.js"

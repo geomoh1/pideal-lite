@@ -50,14 +50,73 @@ export function calculatePlatformFee(amountPi) {
   return Number((Number(amountPi) * 0.05).toFixed(2));
 }
 
+export function serializeService(service) {
+  if (!service) return null;
+
+  const reviewRecords = Array.isArray(service.reviews) ? service.reviews : [];
+  const reviewCount = service.reviewCount ?? service._count?.reviews ?? reviewRecords.length ?? 0;
+  const averageRating =
+    service.rating ??
+    (reviewRecords.length
+      ? Number((reviewRecords.reduce((sum, review) => sum + review.rating, 0) / reviewRecords.length).toFixed(1))
+      : 0);
+
+  return {
+    id: service.id,
+    title: service.title,
+    category: service.category,
+    sellerId: service.sellerId,
+    seller: service.seller?.username || service.sellerName || 'Pi seller',
+    sellerHandle: service.sellerHandle || `@${service.seller?.username || 'seller'}`,
+    pricePi: service.pricePi,
+    depositPi: service.depositPi,
+    rating: averageRating,
+    reviews: reviewCount,
+    deliveryDays: service.deliveryDays,
+    status: service.status,
+    accent: service.accent || '#f5b84b',
+    icon: service.icon || service.category?.slice(0, 2).toUpperCase() || 'PI',
+    featured: service.featured === true,
+    createdAt: formatDate(service.createdAt),
+    summary: service.summary || '',
+    terms: service.terms || '',
+    deliverables: parseJson(service.deliverablesJson) || [
+      'Digital delivery message or link',
+      'Buyer confirmation required',
+      'Pi payment placeholder',
+    ],
+  };
+}
+
 export function serializeOrder(order) {
   if (!order) return null;
 
   return {
-    ...order,
+    id: order.id,
     orderId: order.id,
-    paidPi: order.amountPi,
-    payments: order.payments?.map(serializePayment),
+    serviceId: order.serviceId,
+    buyerId: order.buyerId,
+    buyerName: order.buyerName,
+    sellerId: order.sellerId,
+    sellerName: order.sellerName,
+    status: order.status,
+    paymentMode: order.paymentMode,
+    amountPi: order.amountPi,
+    paidPi: order.amountPi ?? 0,
+    platformFeePi: order.platformFeePi ?? 0,
+    paidAt: order.paidAt,
+    buyerNote: order.buyerNote || '',
+    requestSourceText: order.requestSourceText || '',
+    requestReferenceLink: order.requestReferenceLink || '',
+    requestFileName: order.requestFileName || '',
+    requestFileSize: order.requestFileSize || '',
+    deliveryMessage: order.deliveryMessage || '',
+    deliveryLink: order.deliveryLink || '',
+    deliveryFileName: order.deliveryFileName || '',
+    deliveryFileSize: order.deliveryFileSize || '',
+    rating: order.review?.rating ?? null,
+    createdAt: formatDate(order.createdAt),
+    payments: order.payments?.map(serializePayment) || [],
   };
 }
 
@@ -68,6 +127,20 @@ export function serializePayment(payment) {
     ...payment,
     paymentId: payment.id,
     piPayment: parseJson(payment.piPaymentJson),
+  };
+}
+
+export function serializeReport(report) {
+  if (!report) return null;
+
+  return {
+    id: report.id,
+    serviceId: report.serviceId,
+    serviceTitle: report.serviceTitle || report.service?.title || 'Reported service',
+    reason: report.reason,
+    status: report.status,
+    reporterId: report.reporterId,
+    createdAt: formatDate(report.createdAt),
   };
 }
 
@@ -83,4 +156,9 @@ function parseJson(value) {
   } catch {
     return null;
   }
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  return new Date(value).toISOString().slice(0, 10);
 }

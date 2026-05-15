@@ -1,13 +1,19 @@
+const configuredOrigins = [
+  process.env.FRONTEND_ORIGIN,
+  process.env.FRONTEND_URL,
+  ...(process.env.FRONTEND_ORIGINS || '').split(','),
+]
+  .map((origin) => origin?.trim())
+  .filter(Boolean);
+
 export function allowLocalDevCors(request, response, next) {
   const origin = request.headers.origin;
-  const isLocalOrigin =
-    origin?.startsWith('http://localhost:') || origin?.startsWith('http://127.0.0.1:');
 
-  if (isLocalOrigin) {
+  if (isAllowedOrigin(origin)) {
     response.setHeader('Access-Control-Allow-Origin', origin);
     response.setHeader('Vary', 'Origin');
-    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   }
 
   if (request.method === 'OPTIONS') {
@@ -15,4 +21,22 @@ export function allowLocalDevCors(request, response, next) {
   }
 
   return next();
+}
+
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+
+  try {
+    const url = new URL(origin);
+    const isLocal =
+      url.hostname === 'localhost' ||
+      url.hostname === '127.0.0.1' ||
+      url.hostname === '::1';
+    const isConfigured = configuredOrigins.includes(origin);
+    const isVercelPreview = url.protocol === 'https:' && url.hostname.endsWith('.vercel.app');
+
+    return isLocal || isConfigured || isVercelPreview;
+  } catch {
+    return false;
+  }
 }

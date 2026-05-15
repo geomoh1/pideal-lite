@@ -22,47 +22,62 @@ model User {
 }
 
 model Service {
-  id           String   @id
-  title        String
-  category     String
-  summary      String?
-  pricePi      Float    @default(0)
-  depositPi    Float    @default(0)
-  deliveryDays Int      @default(1)
-  status       String   @default("pending")
-  sellerId     String
-  seller       User     @relation(fields: [sellerId], references: [id])
-  orders       Order[]
-  reviews      Review[]
-  reports      Report[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String   @id
+  title            String
+  category         String
+  summary          String?
+  pricePi          Float    @default(0)
+  depositPi        Float    @default(0)
+  deliveryDays     Int      @default(1)
+  status           String   @default("pending")
+  sellerId         String
+  sellerHandle     String?
+  rating           Float?
+  reviewCount      Int      @default(0)
+  accent           String?
+  icon             String?
+  featured         Boolean  @default(false)
+  terms            String?
+  deliverablesJson String?
+  seller           User     @relation(fields: [sellerId], references: [id])
+  orders           Order[]
+  reviews          Review[]
+  reports          Report[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([sellerId])
   @@index([status])
 }
 
 model Order {
-  id              String    @id
-  serviceId       String?
-  service         Service?  @relation(fields: [serviceId], references: [id])
-  buyerId         String?
-  buyer           User?     @relation("OrderBuyer", fields: [buyerId], references: [id])
-  sellerId        String?
-  seller          User?     @relation("OrderSeller", fields: [sellerId], references: [id])
-  buyerName       String?
-  sellerName      String?
-  status          String    @default("Pending Payment")
-  paymentMode     String?
-  amountPi        Float?
-  platformFeePi   Float?
-  paidAt          DateTime?
-  deliveryMessage String?
-  deliveryLink    String?
-  payments        Payment[]
-  review          Review?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                   String    @id
+  serviceId            String?
+  service              Service?  @relation(fields: [serviceId], references: [id])
+  buyerId              String?
+  buyer                User?     @relation("OrderBuyer", fields: [buyerId], references: [id])
+  sellerId             String?
+  seller               User?     @relation("OrderSeller", fields: [sellerId], references: [id])
+  buyerName            String?
+  sellerName           String?
+  status               String    @default("Pending Payment")
+  paymentMode          String?
+  amountPi             Float?
+  platformFeePi        Float?
+  paidAt               DateTime?
+  buyerNote            String?
+  requestSourceText    String?
+  requestReferenceLink String?
+  requestFileName      String?
+  requestFileSize      String?
+  deliveryMessage      String?
+  deliveryLink         String?
+  deliveryFileName     String?
+  deliveryFileSize     String?
+  payments             Payment[]
+  review               Review?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@index([serviceId])
   @@index([buyerId])

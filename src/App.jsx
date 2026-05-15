@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -31,6 +31,20 @@ import {
   createPiDepositPayment,
   getPiIntegrationStatus,
 } from './piPlaceholders.js';
+import {
+  cancelOrder as cancelOrderApi,
+  createOrder as createOrderApi,
+  createReport as createReportApi,
+  createService as createServiceApi,
+  deliverOrder as deliverOrderApi,
+  disputeOrder as disputeOrderApi,
+  fetchMarketplaceData,
+  removeServiceById,
+  resolveReportById,
+  reviewOrder as reviewOrderApi,
+  startOrder as startOrderApi,
+  updateServiceStatus,
+} from './api.js';
 
 const ORDER_STATUS = {
   PENDING_PAYMENT: 'Pending Payment',
@@ -54,173 +68,6 @@ const categories = [
 ];
 
 const accentOptions = ['#f5b84b', '#72c7b8', '#8ea7ff', '#ef7d8a', '#b98cff', '#66a5ad'];
-
-const initialServices = [
-  {
-    id: 'logo-sprint',
-    title: 'Minimal logo design sprint',
-    category: 'Design',
-    sellerId: 'seller-maha',
-    seller: 'Maha Studio',
-    sellerHandle: '@maha.pi',
-    pricePi: 18,
-    depositPi: 5,
-    rating: 4.9,
-    reviews: 37,
-    deliveryDays: 2,
-    status: 'approved',
-    accent: '#f5b84b',
-    icon: 'LD',
-    featured: true,
-    createdAt: '2026-05-10',
-    summary: 'Clean logo concepts for Pi apps, shops, and community projects.',
-    terms: 'Buyer provides brand name, preferred colors, and one reference style.',
-    deliverables: ['2 logo concepts', '1 revision round', 'PNG and source file'],
-  },
-  {
-    id: 'cv-refresh',
-    title: 'Professional CV rewrite',
-    category: 'Writing',
-    sellerId: 'pi-user-placeholder',
-    seller: 'pioneer.demo',
-    sellerHandle: '@pioneer.demo',
-    pricePi: 12,
-    depositPi: 4,
-    rating: 4.8,
-    reviews: 24,
-    deliveryDays: 1,
-    status: 'approved',
-    accent: '#72c7b8',
-    icon: 'CV',
-    featured: true,
-    createdAt: '2026-05-11',
-    summary: 'Sharper CV wording for tech, business, and remote roles.',
-    terms: 'Buyer sends current CV text and target role before work starts.',
-    deliverables: ['ATS-ready CV text', 'Profile summary', 'Role bullet cleanup'],
-  },
-  {
-    id: 'arabic-english-translation',
-    title: 'Arabic to English translation',
-    category: 'Translation',
-    sellerId: 'seller-faris',
-    seller: 'Faris Lingua',
-    sellerHandle: '@faris.lang',
-    pricePi: 10,
-    depositPi: 3,
-    rating: 4.7,
-    reviews: 19,
-    deliveryDays: 2,
-    status: 'approved',
-    accent: '#8ea7ff',
-    icon: 'TR',
-    featured: false,
-    createdAt: '2026-05-09',
-    summary: 'Clear translation for profiles, app copy, and short documents.',
-    terms: 'Up to 900 words per order. Legal and medical content is excluded.',
-    deliverables: ['Up to 900 words', 'Proofread text', 'Tone adjustment'],
-  },
-  {
-    id: 'image-polish',
-    title: 'Product image cleanup',
-    category: 'Images',
-    sellerId: 'seller-pixel',
-    seller: 'Pixel Care',
-    sellerHandle: '@pixelcare',
-    pricePi: 15,
-    depositPi: 5,
-    rating: 4.9,
-    reviews: 42,
-    deliveryDays: 1,
-    status: 'approved',
-    accent: '#ef7d8a',
-    icon: 'IP',
-    featured: true,
-    createdAt: '2026-05-12',
-    summary: 'Background cleanup, crop, contrast, and listing-ready export.',
-    terms: 'Buyer provides original images and target size before work begins.',
-    deliverables: ['5 edited images', 'Square and story sizes', 'Color polish'],
-  },
-  {
-    id: 'simple-react-fix',
-    title: 'Simple React bug fix',
-    category: 'Code',
-    sellerId: 'seller-devdesk',
-    seller: 'Pi Dev Desk',
-    sellerHandle: '@devdesk',
-    pricePi: 25,
-    depositPi: 8,
-    rating: 4.8,
-    reviews: 31,
-    deliveryDays: 3,
-    status: 'pending',
-    accent: '#b98cff',
-    icon: 'JS',
-    featured: false,
-    createdAt: '2026-05-13',
-    summary: 'Small React fixes for forms, layout issues, and state bugs.',
-    terms: 'One small component fix. Backend and database work are excluded.',
-    deliverables: ['Bug diagnosis', 'Patch notes', 'One small component fix'],
-  },
-];
-
-const initialOrders = [
-  {
-    id: 'order-1001',
-    serviceId: 'cv-refresh',
-    buyerId: 'buyer-ali',
-    buyerName: 'ali.pi',
-    sellerId: 'pi-user-placeholder',
-    sellerName: 'pioneer.demo',
-    status: ORDER_STATUS.IN_PROGRESS,
-    paymentMode: 'Full payment',
-    paidPi: 12,
-    platformFeePi: 0.6,
-    buyerNote: 'Please make this CV stronger for remote product roles.',
-    requestSourceText: 'Existing CV text and target role details.',
-    requestReferenceLink: '',
-    requestFileName: 'ali-current-cv.pdf',
-    requestFileSize: '420 KB',
-    deliveryMessage: '',
-    deliveryLink: '',
-    deliveryFileName: '',
-    deliveryFileSize: '',
-    rating: null,
-    createdAt: '2026-05-12',
-  },
-  {
-    id: 'order-1002',
-    serviceId: 'image-polish',
-    buyerId: 'pi-user-placeholder',
-    buyerName: 'pioneer.demo',
-    sellerId: 'seller-pixel',
-    sellerName: 'Pixel Care',
-    status: ORDER_STATUS.DELIVERED,
-    paymentMode: 'Deposit',
-    paidPi: 5,
-    platformFeePi: 0.25,
-    buyerNote: 'Clean up five product shots for a Pi service listing.',
-    requestSourceText: '',
-    requestReferenceLink: 'https://example.com/source-images',
-    requestFileName: 'product-shots.zip',
-    requestFileSize: '8.6 MB',
-    deliveryMessage: 'Images are cleaned and exported in square and story sizes.',
-    deliveryLink: 'https://example.com/mock-delivery',
-    deliveryFileName: 'cleaned-product-images.zip',
-    deliveryFileSize: '6.2 MB',
-    rating: null,
-    createdAt: '2026-05-13',
-  },
-];
-
-const initialReports = [
-  {
-    id: 'report-001',
-    serviceId: 'simple-react-fix',
-    serviceTitle: 'Simple React bug fix',
-    reason: 'Needs admin review before publishing.',
-    status: 'open',
-  },
-];
 
 const blankService = {
   title: '',
@@ -279,10 +126,10 @@ function App() {
   const [selectedRole, setSelectedRole] = useState('Buyer');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [query, setQuery] = useState('');
-  const [services, setServices] = useState(initialServices);
-  const [orders, setOrders] = useState(initialOrders);
-  const [reports, setReports] = useState(initialReports);
-  const [selectedServiceId, setSelectedServiceId] = useState(initialServices[0].id);
+  const [services, setServices] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [selectedServiceId, setSelectedServiceId] = useState('');
   const [newService, setNewService] = useState(blankService);
   const [requestNote, setRequestNote] = useState('');
   const [requestAsset, setRequestAsset] = useState(blankRequestAsset);
@@ -291,9 +138,41 @@ function App() {
   const [deliveryDrafts, setDeliveryDrafts] = useState({});
   const [flowError, setFlowError] = useState('');
   const [flowNotice, setFlowNotice] = useState('');
+  const [marketplaceLoading, setMarketplaceLoading] = useState(true);
+  const [marketplaceError, setMarketplaceError] = useState('');
   const piIntegrationStatus = getPiIntegrationStatus();
 
   const currentUserId = user?.uid;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadMarketplace() {
+      try {
+        setMarketplaceLoading(true);
+        const data = await fetchMarketplaceData();
+        if (!isMounted) return;
+
+        setServices(data.services);
+        setOrders(data.orders);
+        setReports(data.reports);
+        setMarketplaceError('');
+      } catch (error) {
+        if (!isMounted) return;
+        setMarketplaceError(getErrorMessage(error, 'Could not load marketplace data from the backend.'));
+      } finally {
+        if (isMounted) {
+          setMarketplaceLoading(false);
+        }
+      }
+    }
+
+    loadMarketplace();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const approvedServices = useMemo(
     () => services.filter((service) => service.status === 'approved'),
@@ -311,14 +190,26 @@ function App() {
     });
   }, [approvedServices, query, selectedCategory]);
 
+  useEffect(() => {
+    if (!services.length) return;
+
+    if (!selectedServiceId || !services.some((service) => service.id === selectedServiceId)) {
+      setSelectedServiceId(services[0].id);
+    }
+  }, [selectedServiceId, services]);
+
   const selectedService = useMemo(
-    () => services.find((service) => service.id === selectedServiceId) ?? services[0],
-    [selectedServiceId, services],
+    () =>
+      services.find((service) => service.id === selectedServiceId) ??
+      approvedServices[0] ??
+      services[0] ??
+      null,
+    [approvedServices, selectedServiceId, services],
   );
 
   const featuredServices = approvedServices.filter((service) => service.featured).slice(0, 3);
   const latestServices = [...approvedServices]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, 4);
   const activeOrder = orders.find(
     (order) => order.serviceId === selectedService?.id && order.buyerId === currentUserId,
@@ -327,6 +218,30 @@ function App() {
   const userBuyerOrders = orders.filter((order) => order.buyerId === currentUserId);
   const userSellerOrders = orders.filter((order) => order.sellerId === currentUserId);
   const userServices = services.filter((service) => service.sellerId === currentUserId);
+  const isInitialMarketplaceLoading =
+    marketplaceLoading && services.length === 0 && orders.length === 0 && reports.length === 0;
+
+  function replaceOrder(updatedOrder) {
+    setOrders((current) => {
+      const exists = current.some((order) => order.id === updatedOrder.id);
+      if (!exists) return [updatedOrder, ...current];
+      return current.map((order) => (order.id === updatedOrder.id ? updatedOrder : order));
+    });
+  }
+
+  function replaceService(updatedService) {
+    setServices((current) => {
+      const exists = current.some((service) => service.id === updatedService.id);
+      if (!exists) return [updatedService, ...current];
+      return current.map((service) => (service.id === updatedService.id ? updatedService : service));
+    });
+  }
+
+  function replaceReport(updatedReport) {
+    setReports((current) =>
+      current.map((report) => (report.id === updatedReport.id ? updatedReport : report)),
+    );
+  }
 
   async function getAuthenticatedPiUser() {
     if (user) return user;
@@ -388,40 +303,40 @@ function App() {
     setRequestAsset((current) => ({ ...current, ...patch }));
   }
 
-  function handleAddService(event) {
+  async function handleAddService(event) {
     event.preventDefault();
     const pricePi = Number(newService.pricePi);
     const depositPi = Number(newService.depositPi);
     const deliveryDays = Number(newService.deliveryDays);
 
     const listing = {
-      id: `service-${Date.now()}`,
       title: newService.title.trim(),
       category: newService.category,
       sellerId: user?.uid ?? 'pi-user-placeholder',
-      seller: user?.username ?? 'pioneer.demo',
+      sellerName: user?.username ?? 'pioneer.demo',
       sellerHandle: user ? `@${user.username}` : '@pioneer.demo',
       pricePi,
       depositPi,
-      rating: 0,
-      reviews: 0,
       deliveryDays,
-      status: 'pending',
       accent: newService.accent,
       icon: (newService.icon || newService.category.slice(0, 2)).toUpperCase().slice(0, 3),
-      featured: false,
-      createdAt: new Date().toISOString().slice(0, 10),
       summary: newService.summary.trim(),
       terms: newService.terms.trim(),
       deliverables: ['Digital delivery message or link', 'Buyer confirmation required', 'Pi payment placeholder'],
     };
 
-    setServices((current) => [listing, ...current]);
-    setNewService(blankService);
-    setFlowError('');
-    setFlowNotice('Service submitted for admin review.');
-    setActiveView('admin');
-    setAdminTab('services');
+    try {
+      const createdService = await createServiceApi(listing);
+      setServices((current) => [createdService, ...current]);
+      setNewService(blankService);
+      setFlowError('');
+      setFlowNotice('Service submitted for admin review.');
+      setActiveView('admin');
+      setAdminTab('services');
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Service could not be submitted to the backend.'));
+      setFlowNotice('');
+    }
   }
 
   async function handleRequestService(service) {
@@ -442,35 +357,28 @@ function App() {
       return;
     }
 
-    const order = {
-      id: `order-${Date.now()}`,
+    const orderRequest = {
       serviceId: service.id,
       buyerId: buyer.uid,
       buyerName: buyer.username,
-      sellerId: service.sellerId,
-      sellerName: service.seller,
-      status: ORDER_STATUS.PENDING_PAYMENT,
-      paymentMode: null,
-      paidPi: 0,
-      platformFeePi: 0,
       buyerNote: requestNote.trim(),
       requestSourceText: requestAsset.sourceText.trim(),
       requestReferenceLink: requestAsset.referenceLink.trim(),
       requestFileName: requestAsset.fileName,
       requestFileSize: requestAsset.fileSize,
-      deliveryMessage: '',
-      deliveryLink: '',
-      deliveryFileName: '',
-      deliveryFileSize: '',
-      rating: null,
-      createdAt: new Date().toISOString().slice(0, 10),
     };
 
-    setFlowError('');
-    setFlowNotice('Order created. Choose a deposit or full payment to continue.');
-    setOrders((current) => [order, ...current]);
-    setRequestNote('');
-    setRequestAsset(blankRequestAsset);
+    try {
+      const createdOrder = await createOrderApi(orderRequest);
+      setFlowError('');
+      setFlowNotice('Order created. Choose a deposit or full payment to continue.');
+      setOrders((current) => [createdOrder, ...current.filter((item) => item.id !== createdOrder.id)]);
+      setRequestNote('');
+      setRequestAsset(blankRequestAsset);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Order could not be created on the backend.'));
+      setFlowNotice('');
+    }
   }
 
   async function handlePayOrder(orderId, mode) {
@@ -516,31 +424,21 @@ function App() {
     setFlowNotice('Payment completed by the backend. The seller can start work now.');
     setOrders((current) =>
       current.map((item) =>
-        item.id === orderId
-          ? {
-              ...item,
-              status: paymentResult.order.status,
-              paymentMode: mode === 'full' ? 'Full payment' : 'Deposit',
-              paidPi: amountPi,
-              platformFeePi: Number((amountPi * 0.05).toFixed(2)),
-              payment: paymentResult.payment,
-              approval: paymentResult.approval,
-              completion: paymentResult.completion,
-            }
-          : item,
+        item.id === orderId ? { ...paymentResult.order, payment: paymentResult.payment } : item,
       ),
     );
   }
 
-  function handleStartOrder(orderId) {
-    setFlowNotice('Order moved to In Progress.');
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === orderId && order.status === ORDER_STATUS.PAID
-          ? { ...order, status: ORDER_STATUS.IN_PROGRESS }
-          : order,
-      ),
-    );
+  async function handleStartOrder(orderId) {
+    try {
+      const updatedOrder = await startOrderApi(orderId);
+      setFlowNotice('Order moved to In Progress.');
+      setFlowError('');
+      replaceOrder(updatedOrder);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Order could not be moved to In Progress.'));
+      setFlowNotice('');
+    }
   }
 
   function updateDeliveryDraft(orderId, field, value) {
@@ -559,23 +457,22 @@ function App() {
     }));
   }
 
-  function handleDeliverOrder(orderId) {
+  async function handleDeliverOrder(orderId) {
     const draft = deliveryDrafts[orderId] ?? {};
-    setFlowNotice('Delivery submitted. Waiting for buyer confirmation.');
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === orderId && order.status === ORDER_STATUS.IN_PROGRESS
-          ? {
-              ...order,
-              status: ORDER_STATUS.DELIVERED,
-              deliveryMessage: draft.deliveryMessage || 'Delivery submitted by seller.',
-              deliveryLink: draft.deliveryLink || '',
-              deliveryFileName: draft.deliveryFileName || '',
-              deliveryFileSize: draft.deliveryFileSize || '',
-            }
-          : order,
-      ),
-    );
+    try {
+      const updatedOrder = await deliverOrderApi(orderId, {
+        deliveryMessage: draft.deliveryMessage || 'Delivery submitted by seller.',
+        deliveryLink: draft.deliveryLink || '',
+        deliveryFileName: draft.deliveryFileName || '',
+        deliveryFileSize: draft.deliveryFileSize || '',
+      });
+      setFlowNotice('Delivery submitted. Waiting for buyer confirmation.');
+      setFlowError('');
+      replaceOrder(updatedOrder);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Delivery could not be submitted to the backend.'));
+      setFlowNotice('');
+    }
   }
 
   async function handleConfirmDelivery(orderId) {
@@ -588,8 +485,11 @@ function App() {
 
     try {
       // Official Pi delivery/payment completion must stay inside src/piPlaceholders.js.
-      await confirmPiDeliveryPayment({ orderId });
+      const confirmation = await confirmPiDeliveryPayment({ orderId });
       setFlowError('');
+      if (confirmation.order) {
+        replaceOrder(confirmation.order);
+      }
     } catch {
       setFlowError('Delivery confirmation failed. Recheck the official Pi completion flow later.');
       setFlowNotice('');
@@ -597,73 +497,96 @@ function App() {
     }
 
     setFlowNotice('Delivery confirmed. You can rate the seller now.');
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === orderId ? { ...order, status: ORDER_STATUS.COMPLETED } : order,
-      ),
-    );
   }
 
-  function handleRateOrder(orderId, rating) {
-    setFlowNotice(`Seller rated ${rating} stars.`);
-    setOrders((current) =>
-      current.map((order) => (order.id === orderId ? { ...order, rating } : order)),
-    );
+  async function handleRateOrder(orderId, rating) {
+    try {
+      const updatedOrder = await reviewOrderApi(orderId, rating);
+      setFlowNotice(`Seller rated ${rating} stars.`);
+      setFlowError('');
+      replaceOrder(updatedOrder);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Seller rating could not be saved.'));
+      setFlowNotice('');
+    }
   }
 
-  function handleCancelOrder(orderId) {
-    setFlowNotice('Order cancelled.');
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === orderId ? { ...order, status: ORDER_STATUS.CANCELLED } : order,
-      ),
-    );
+  async function handleCancelOrder(orderId) {
+    try {
+      const updatedOrder = await cancelOrderApi(orderId);
+      setFlowNotice('Order cancelled.');
+      setFlowError('');
+      replaceOrder(updatedOrder);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Order could not be cancelled.'));
+      setFlowNotice('');
+    }
   }
 
-  function handleDisputeOrder(orderId) {
-    setFlowNotice('Order marked as disputed for admin review.');
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === orderId ? { ...order, status: ORDER_STATUS.DISPUTED } : order,
-      ),
-    );
+  async function handleDisputeOrder(orderId) {
+    try {
+      const updatedOrder = await disputeOrderApi(orderId);
+      setFlowNotice('Order marked as disputed for admin review.');
+      setFlowError('');
+      replaceOrder(updatedOrder);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Order could not be marked as disputed.'));
+      setFlowNotice('');
+    }
   }
 
-  function moderateService(serviceId, nextStatus) {
-    setFlowNotice(`Service ${nextStatus}.`);
-    setServices((current) =>
-      current.map((service) =>
-        service.id === serviceId ? { ...service, status: nextStatus } : service,
-      ),
-    );
+  async function moderateService(serviceId, nextStatus) {
+    try {
+      const updatedService = await updateServiceStatus(serviceId, nextStatus);
+      setFlowNotice(`Service ${nextStatus}.`);
+      setFlowError('');
+      replaceService(updatedService);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Service moderation change could not be saved.'));
+      setFlowNotice('');
+    }
   }
 
-  function removeService(serviceId) {
-    setFlowNotice('Service removed from moderation.');
-    setServices((current) => current.filter((service) => service.id !== serviceId));
+  async function removeService(serviceId) {
+    try {
+      await removeServiceById(serviceId);
+      setFlowNotice('Service removed from moderation.');
+      setFlowError('');
+      setServices((current) => current.filter((service) => service.id !== serviceId));
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Service could not be removed.'));
+      setFlowNotice('');
+    }
   }
 
-  function reportService(service) {
-    setFlowNotice('Report sent to admin moderation.');
-    setReports((current) => [
-      {
-        id: `report-${Date.now()}`,
+  async function reportService(service) {
+    try {
+      const report = await createReportApi({
         serviceId: service.id,
         serviceTitle: service.title,
+        reporterId: user?.uid,
+        reporterName: user?.username,
         reason: 'Buyer reported this digital service for admin review.',
-        status: 'open',
-      },
-      ...current,
-    ]);
+      });
+      setFlowNotice('Report sent to admin moderation.');
+      setFlowError('');
+      setReports((current) => [report, ...current.filter((item) => item.id !== report.id)]);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Report could not be sent to admin moderation.'));
+      setFlowNotice('');
+    }
   }
 
-  function resolveReport(reportId) {
-    setFlowNotice('Report resolved.');
-    setReports((current) =>
-      current.map((report) =>
-        report.id === reportId ? { ...report, status: 'resolved' } : report,
-      ),
-    );
+  async function resolveReport(reportId) {
+    try {
+      const report = await resolveReportById(reportId);
+      setFlowNotice('Report resolved.');
+      setFlowError('');
+      replaceReport(report);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Report could not be resolved.'));
+      setFlowNotice('');
+    }
   }
 
   return (
@@ -691,8 +614,10 @@ function App() {
         />
         {flowError && <FlowError message={flowError} />}
         {flowNotice && <FlowNotice message={flowNotice} />}
+        {marketplaceError && <FlowError message={marketplaceError} />}
+        {isInitialMarketplaceLoading && <LoadingState message="Loading marketplace data..." />}
 
-        {activeView === 'home' && (
+        {!isInitialMarketplaceLoading && activeView === 'home' && (
           <HomeView
             query={query}
             setQuery={setQuery}
@@ -705,7 +630,7 @@ function App() {
           />
         )}
 
-        {activeView === 'detail' && selectedService && (
+        {!isInitialMarketplaceLoading && activeView === 'detail' && selectedService && (
           <DetailView
             user={user}
             service={selectedService}
@@ -724,7 +649,7 @@ function App() {
           />
         )}
 
-        {activeView === 'add' && (
+        {!isInitialMarketplaceLoading && activeView === 'add' && (
           <AddServiceView
             user={user}
             newService={newService}
@@ -734,7 +659,7 @@ function App() {
           />
         )}
 
-        {activeView === 'orders' && (
+        {!isInitialMarketplaceLoading && activeView === 'orders' && (
           <OrdersView
             user={user}
             orderTab={orderTab}
@@ -756,7 +681,7 @@ function App() {
           />
         )}
 
-        {activeView === 'profile' && (
+        {!isInitialMarketplaceLoading && activeView === 'profile' && (
           <ProfileView
             user={user}
             selectedRole={selectedRole}
@@ -769,7 +694,7 @@ function App() {
           />
         )}
 
-        {activeView === 'admin' && (
+        {!isInitialMarketplaceLoading && activeView === 'admin' && (
           <AdminView
             adminTab={adminTab}
             setAdminTab={setAdminTab}
@@ -850,6 +775,15 @@ function FlowNotice({ message }) {
     <div className="flow-notice" role="status">
       <CheckCircle2 size={18} />
       <span>{message}</span>
+    </div>
+  );
+}
+
+function LoadingState({ message }) {
+  return (
+    <div className="empty-state loading-state" role="status">
+      <Clock3 size={24} />
+      <p>{message}</p>
     </div>
   );
 }
@@ -1833,6 +1767,10 @@ function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '';
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getErrorMessage(error, fallback) {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 export default App;

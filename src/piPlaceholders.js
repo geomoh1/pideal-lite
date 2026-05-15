@@ -52,7 +52,7 @@ async function postJson(path, body) {
   const data = await response.json().catch(() => null);
 
   if (!response.ok || !data?.ok) {
-    throw new Error(data?.error || `Payment backend request failed: ${response.status}`);
+    throw new Error(data?.error || `PiDeal backend request failed: ${response.status}`);
   }
 
   return data;
@@ -285,9 +285,5 @@ export async function completePiPayment({ paymentId, txid, orderId }) {
 }
 
 export async function confirmPiDeliveryPayment({ orderId }) {
-  return {
-    orderId,
-    status: 'delivery_confirmation_recorded',
-    confirmedAt: new Date().toISOString(),
-  };
+  return postJson(`/api/orders/${encodeURIComponent(orderId)}/confirm`, {});
 }

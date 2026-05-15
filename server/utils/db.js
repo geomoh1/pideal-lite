@@ -25,6 +25,11 @@ export async function ensureServiceSnapshot({ serviceId, sellerId, amountPi }) {
       deliveryDays: 1,
       status: 'approved',
       sellerId,
+      sellerHandle: '@seller',
+      accent: '#f5b84b',
+      icon: 'PI',
+      terms: 'Payment-created service snapshot.',
+      deliverablesJson: JSON.stringify(['Digital delivery message or link', 'Buyer confirmation required']),
     },
     update: {},
   });

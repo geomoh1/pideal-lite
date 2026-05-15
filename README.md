@@ -12,6 +12,8 @@ PiDeal Lite is a mobile-first React marketplace for Pi Browser where Pi Network 
 - Pi payment creation through the official Pi SDK when available, with local fallback for development
 - Minimal Node/Express backend for Pi payment approval and completion
 - SQLite persistence through Prisma for users, services, orders, payments, reviews, and reports
+- API-driven frontend state for services, orders, delivery, reviews, and reports
+- Loading and error states for backend API calls
 - Buyer and seller orders dashboard
 - Seller delivery message/link placeholder
 - Delivery confirmation
@@ -92,16 +94,34 @@ The frontend uses the official SDK calls `Pi.authenticate(...)` and `Pi.createPa
 
 Important: official Pi payments require server-side approval and server-side completion before an order should be treated as truly paid. PiDeal Lite now routes approval and completion callbacks through the backend endpoints below. The React frontend only marks an order as `Paid` after the backend completion endpoint returns `order.status = "Paid"`.
 
-## Backend payment API
+## Backend API
 
-The backend is intentionally small. It supports the Pi payment lifecycle and persists users, services, orders, payments, reviews, and reports in SQLite through Prisma.
+The backend is intentionally small. It supports the Pi payment lifecycle and now serves the marketplace state from SQLite through Prisma. React no longer depends on local `initialServices` or `initialOrders`; it loads services, orders, and reports through REST APIs.
 
 Endpoints:
 
 ```text
+GET  /api/services
+POST /api/services
+POST /api/services/:serviceId/status
+POST /api/services/:serviceId/remove
+
+GET  /api/orders
+POST /api/orders
+POST /api/orders/:orderId/start
+POST /api/orders/:orderId/deliver
+POST /api/orders/:orderId/confirm
+POST /api/orders/:orderId/review
+POST /api/orders/:orderId/cancel
+POST /api/orders/:orderId/dispute
+GET  /api/orders/:orderId/status
+
+GET  /api/reports
+POST /api/reports
+POST /api/reports/:reportId/resolve
+
 POST /api/pi/payments/:paymentId/approve
 POST /api/pi/payments/:paymentId/complete
-GET  /api/orders/:orderId/status
 ```
 
 Environment files:
@@ -118,6 +138,8 @@ PORT=4000
 DATABASE_URL="file:./dev.db"
 PI_API_BASE_URL=https://api.minepi.com/v2
 PI_API_KEY=
+FRONTEND_ORIGIN=http://localhost:5173
+FRONTEND_ORIGINS=
 PI_USE_MOCK_PAYMENTS=true
 ```
 
@@ -129,6 +151,8 @@ VITE_API_BASE_URL=
 
 Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API key. In production, configure `PI_API_KEY` and set `PI_USE_MOCK_PAYMENTS=false`.
 
+`FRONTEND_ORIGIN` should point to the deployed frontend URL. `FRONTEND_ORIGINS` can hold comma-separated extra origins. The backend also allows localhost and HTTPS Vercel preview domains ending in `.vercel.app`.
+
 `VITE_API_BASE_URL` controls where the React app sends `/api` calls. Leave it empty in local development so Vite can proxy `/api` to `http://127.0.0.1:4000`. Set it to the deployed backend HTTPS URL before building for Vercel or Netlify, for example `https://your-pideal-backend.onrender.com`.
 
 Database setup:
@@ -139,7 +163,7 @@ npm run prisma:apply
 npm run prisma:seed
 ```
 
-The default SQLite database path is `prisma/dev.db`. It is ignored by git. The schema and migration files are committed so the same structure can be recreated on another machine. Use `npm run prisma:migrate -- --name <name>` when adding future migrations.
+The default SQLite database path is `prisma/dev.db`. It is ignored by git. The schema and migration files are committed so the same structure can be recreated on another machine. `npm run prisma:apply` applies committed SQL migrations in order and tolerates already-applied columns for simple deployment reruns. Use `npm run prisma:migrate -- --name <name>` when adding future migrations.
 
 Development:
 
@@ -175,7 +199,7 @@ Backend smoke test:
 npm run test:backend
 ```
 
-The smoke test uses mock Pi payments and verifies that approval leaves the order in `Pending Payment`, while completion persists the order as `Paid`.
+The smoke test uses mock Pi payments and verifies the API-driven flow: create service, approve listing, create order with request metadata, approve/complete payment, start work, deliver, confirm, review, report, resolve report, and reload persisted order state.
 
 ## Deployment notes
 
@@ -187,6 +211,7 @@ Frontend on Vercel or Netlify:
 - Rebuild the frontend after changing `VITE_API_BASE_URL`; Vite embeds this value at build time.
 - The frontend is a single-page app. Pi auth and payment calls still stay isolated in `src/piPlaceholders.js`.
 - Before Pi App Studio submission, open the deployed frontend in a normal mobile browser and confirm Demo Buyer, Demo Seller, and Demo Admin can complete their flows without Pi Browser.
+- The deployed frontend must reach the backend API over HTTPS for services, orders, reports, and Pi payment callbacks.
 
 Backend on Render or Railway:
 
@@ -194,6 +219,7 @@ Backend on Render or Railway:
 - Recommended deploy setup command: `npm install && npm run prisma:generate && npm run prisma:apply`
 - Environment variables: copy values from `.env.backend.example`.
 - Production values must include `PI_API_KEY` and `PI_USE_MOCK_PAYMENTS=false`.
+- Set `FRONTEND_ORIGIN` to the Vercel or Netlify production URL. Add extra domains to `FRONTEND_ORIGINS` as needed.
 - The backend must be served over HTTPS because the Pi Browser and payment callbacks should not rely on insecure origins.
 
 SQLite production limitation:
@@ -213,6 +239,8 @@ SQLite production limitation:
 - Confirm Pi Login uses the official SDK in Pi Browser and local fallback outside Pi Browser.
 - Confirm payment creation opens the official Pi payment flow in Pi Browser.
 - Confirm `VITE_API_BASE_URL` points to the deployed backend outside local development.
+- Confirm backend CORS allows the production frontend domain and Vercel preview domains.
+- Confirm services, orders, delivery, reviews, and reports load from the backend after a page refresh.
 - Confirm the deployed app shows Demo Buyer, Demo Seller, and Demo Admin before real Pi auth succeeds.
 - Confirm demo payments stay in mock mode on the deployed backend.
 - Confirm demo buttons disappear after a real Pi SDK authentication succeeds.

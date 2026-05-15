@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
+import { PrismaClient } from '@prisma/client';
 
 const baseUrl = 'http://127.0.0.1:4000';
 const startedAt = Date.now();
 const paymentId = `smoke-payment-${startedAt}`;
-const orderId = `smoke-order-${startedAt}`;
 const serviceId = `smoke-service-${startedAt}`;
 const txid = `smoke-tx-${startedAt}`;
+const prisma = new PrismaClient();
 
 const server = spawn(process.execPath, ['server/index.js'], {
   cwd: process.cwd(),
@@ -15,6 +16,7 @@ const server = spawn(process.execPath, ['server/index.js'], {
     NODE_ENV: 'production',
     PI_API_KEY: '',
     PI_USE_MOCK_PAYMENTS: 'false',
+    DATABASE_URL: process.env.DATABASE_URL || 'file:./dev.db',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,
@@ -33,10 +35,52 @@ server.stderr.on('data', (chunk) => {
 
 try {
   const health = await waitForHealth();
+  const createdService = await postJson('/api/services', {
+    id: serviceId,
+    title: 'Smoke test logo sprint',
+    category: 'Design',
+    sellerId: 'smoke-seller',
+    sellerName: 'smoke.seller',
+    sellerHandle: '@smoke.seller',
+    pricePi: 10,
+    depositPi: 4,
+    deliveryDays: 1,
+    icon: 'ST',
+    accent: '#f5b84b',
+    summary: 'Smoke-test service for API-driven marketplace state.',
+    terms: 'Buyer sends a short brief.',
+    deliverables: ['Smoke delivery'],
+  });
+
+  assertEqual(createdService.service.status, 'pending', 'New services must start pending.');
+
+  const approvedService = await postJson(`/api/services/${serviceId}/status`, { status: 'approved' });
+  assertEqual(approvedService.service.status, 'approved', 'Service approval must persist.');
+
+  const services = await getJson('/api/services');
+  assertTruthy(
+    services.services.some((service) => service.id === serviceId),
+    'GET /api/services must include the smoke service.',
+  );
+
+  const createdOrder = await postJson('/api/orders', {
+    serviceId,
+    buyerId: 'smoke-buyer',
+    buyerName: 'smoke.buyer',
+    buyerNote: 'Please create a tiny logo for the smoke test.',
+    requestSourceText: 'Smoke brand reference text.',
+    requestReferenceLink: 'https://example.com/smoke-reference',
+    requestFileName: 'smoke-reference.png',
+    requestFileSize: '14 KB',
+  });
+  const orderId = createdOrder.order.id;
+  assertEqual(createdOrder.order.status, 'Pending Payment', 'New orders must start Pending Payment.');
+  assertEqual(createdOrder.order.requestFileName, 'smoke-reference.png', 'Order request metadata must persist.');
+
   const approval = await postJson(`/api/pi/payments/${paymentId}/approve`, {
     orderId,
     serviceId,
-    amountPi: 5,
+    amountPi: 4,
     mode: 'deposit',
     buyerId: 'smoke-buyer',
     buyerName: 'smoke.buyer',
@@ -59,21 +103,60 @@ try {
   assertEqual(completion.order.status, 'Paid', 'Completion must mark order as Paid.');
   assertEqual(completion.mock, true, 'Demo completion must stay in mock mode.');
 
+  const started = await postJson(`/api/orders/${orderId}/start`, {});
+  assertEqual(started.order.status, 'In Progress', 'Paid orders must be startable.');
+
+  const delivered = await postJson(`/api/orders/${orderId}/deliver`, {
+    deliveryMessage: 'Smoke delivery finished.',
+    deliveryLink: 'https://example.com/smoke-delivery',
+    deliveryFileName: 'smoke-delivery.zip',
+    deliveryFileSize: '20 KB',
+  });
+  assertEqual(delivered.order.status, 'Delivered', 'Seller delivery must move order to Delivered.');
+  assertEqual(delivered.order.deliveryFileName, 'smoke-delivery.zip', 'Delivery metadata must persist.');
+
+  const confirmed = await postJson(`/api/orders/${orderId}/confirm`, {});
+  assertEqual(confirmed.order.status, 'Completed', 'Buyer confirmation must complete the order.');
+
+  const reviewed = await postJson(`/api/orders/${orderId}/review`, { rating: 5 });
+  assertEqual(reviewed.order.rating, 5, 'Review rating must persist on the order response.');
+
+  const report = await postJson('/api/reports', {
+    serviceId,
+    serviceTitle: 'Smoke test logo sprint',
+    reporterId: 'smoke-buyer',
+    reporterName: 'smoke.buyer',
+    reason: 'Smoke report for moderation.',
+  });
+  assertEqual(report.report.status, 'open', 'Reports must start open.');
+
+  const resolvedReport = await postJson(`/api/reports/${report.report.id}/resolve`, {});
+  assertEqual(resolvedReport.report.status, 'resolved', 'Reports must be resolvable.');
+
   const afterCompletion = await getJson(`/api/orders/${orderId}/status`);
-  assertEqual(afterCompletion.order.status, 'Paid', 'Stored order must persist Paid after completion.');
+  assertEqual(afterCompletion.order.status, 'Completed', 'Stored order must persist the final status.');
+
+  const orders = await getJson('/api/orders');
+  assertTruthy(
+    orders.orders.some((order) => order.id === orderId && order.rating === 5),
+    'GET /api/orders must include the completed reviewed order.',
+  );
 
   console.log(JSON.stringify({
     health: health.database,
     piPaymentsMode: health.piPaymentsMode,
+    serviceStatus: approvedService.service.status,
+    orderStatus: afterCompletion.order.status,
     approvalMock: approval.mock,
-    approvalStatus: approval.order.status,
-    beforeCompletionStatus: beforeCompletion.order.status,
     completionMock: completion.mock,
-    completionStatus: completion.order.status,
-    persistedStatus: afterCompletion.order.status,
+    deliveryFileName: delivered.order.deliveryFileName,
+    rating: reviewed.order.rating,
+    reportStatus: resolvedReport.report.status,
   }, null, 2));
 } finally {
   await stopServer();
+  await cleanupSmokeData();
+  await prisma.$disconnect();
 }
 
 async function waitForHealth() {
@@ -121,6 +204,12 @@ function assertEqual(actual, expected, message) {
   }
 }
 
+function assertTruthy(value, message) {
+  if (!value) {
+    throw new Error(message);
+  }
+}
+
 function delay(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -142,4 +231,49 @@ async function stopServer() {
   if (server.exitCode === null) {
     server.kill('SIGKILL');
   }
+}
+
+async function cleanupSmokeData() {
+  const smokeServiceFilter = { startsWith: 'smoke-service-' };
+
+  await prisma.review.deleteMany({
+    where: {
+      OR: [
+        { serviceId: smokeServiceFilter },
+        { buyerId: 'smoke-buyer' },
+        { sellerId: 'smoke-seller' },
+      ],
+    },
+  });
+  await prisma.payment.deleteMany({
+    where: {
+      OR: [
+        { id: { startsWith: 'smoke-payment-' } },
+        { serviceId: smokeServiceFilter },
+      ],
+    },
+  });
+  await prisma.report.deleteMany({
+    where: {
+      OR: [
+        { serviceId: smokeServiceFilter },
+        { reporterId: 'smoke-buyer' },
+      ],
+    },
+  });
+  await prisma.order.deleteMany({
+    where: {
+      OR: [
+        { serviceId: smokeServiceFilter },
+        { buyerId: 'smoke-buyer' },
+        { sellerId: 'smoke-seller' },
+      ],
+    },
+  });
+  await prisma.service.deleteMany({
+    where: { id: smokeServiceFilter },
+  });
+  await prisma.user.deleteMany({
+    where: { id: { in: ['smoke-buyer', 'smoke-seller'] } },
+  });
 }
