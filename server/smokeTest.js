@@ -73,6 +73,7 @@ try {
   });
 
   assertEqual(createdService.service.status, 'pending', 'New services must start pending.');
+  await expectCorsPreflight(`/api/services/${serviceId}/status`);
 
   const rejectedModeration = await postJsonExpectFailure(`/api/services/${serviceId}/status`, { status: 'approved' });
   assertEqual(rejectedModeration.status, 401, 'Service moderation must require an admin actor.');
@@ -239,6 +240,26 @@ async function postJsonExpectFailure(path, body, options = {}) {
   }
 
   return { status: response.status, data };
+}
+
+async function expectCorsPreflight(path) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'https://pideal-lite.vercel.app',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type,x-pideal-user-id',
+    },
+  });
+  const allowedHeaders = response.headers.get('access-control-allow-headers') || '';
+  const allowedOrigin = response.headers.get('access-control-allow-origin') || '';
+
+  assertEqual(response.status, 204, 'CORS preflight must return 204.');
+  assertEqual(allowedOrigin, 'https://pideal-lite.vercel.app', 'CORS preflight must allow the deployed frontend origin.');
+  assertTruthy(
+    allowedHeaders.toLowerCase().includes('x-pideal-user-id'),
+    'CORS preflight must allow x-pideal-user-id.',
+  );
 }
 
 async function parseResponse(response) {

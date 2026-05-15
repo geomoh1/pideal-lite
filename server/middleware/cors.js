@@ -12,8 +12,9 @@ export function allowLocalDevCors(request, response, next) {
   if (isAllowedOrigin(origin)) {
     response.setHeader('Access-Control-Allow-Origin', origin);
     response.setHeader('Vary', 'Origin');
-    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-PiDeal-User-Id');
+    response.setHeader('Access-Control-Allow-Headers', getAllowedHeaders(request));
     response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    response.setHeader('Access-Control-Max-Age', '86400');
   }
 
   if (request.method === 'OPTIONS') {
@@ -39,4 +40,14 @@ function isAllowedOrigin(origin) {
   } catch {
     return false;
   }
+}
+
+function getAllowedHeaders(request) {
+  const requestedHeaders = request.headers['access-control-request-headers'];
+
+  if (requestedHeaders) {
+    return requestedHeaders;
+  }
+
+  return 'Content-Type, Authorization, X-PiDeal-User-Id, x-pideal-user-id';
 }
