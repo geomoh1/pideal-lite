@@ -1,7 +1,8 @@
 /*
   Official Pi SDK integration layer for PiDeal Lite.
 
-  The Pi SDK is loaded in index.html using the official script:
+  The Pi SDK is loaded from the official script only when SDK testing is
+  explicitly enabled:
   https://sdk.minepi.com/pi-sdk.js
 
   Keep every direct Pi SDK call in this file. React components should import
@@ -13,10 +14,16 @@
   an order as paid after the backend completion endpoint returns Paid.
 */
 
+const PI_SDK_SCRIPT_SRC = 'https://sdk.minepi.com/pi-sdk.js';
+let piSdkInitialized = false;
+let piSdkLoadPromise = null;
+
 function getPiSdk() {
-  if (isLocalDevelopmentHost()) {
+  if (!isPiSdkAllowedRuntime()) {
     return null;
   }
+
+  initializePiSdkIfEnabled();
 
   return typeof window !== 'undefined' && window.Pi ? window.Pi : null;
 }
@@ -27,9 +34,67 @@ function isLocalDevelopmentHost() {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 }
 
+function isPiSdkAllowedRuntime() {
+  if (typeof window === 'undefined') return false;
+  if (isLocalDevelopmentHost()) return false;
+  if (import.meta.env.VITE_ENABLE_PI_SDK === 'true') return true;
+  return window.location.search.includes('pi_sdk=1');
+}
+
+function isDeployedStaticFrontend() {
+  if (typeof window === 'undefined') return false;
+
+  return !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+}
+
 function isPiSdkAvailable() {
   const pi = getPiSdk();
   return Boolean(pi?.authenticate && pi?.createPayment);
+}
+
+function initializePiSdkIfEnabled() {
+  if (piSdkInitialized || typeof window === 'undefined') return;
+  if (!window.Pi?.init) return;
+
+  window.Pi.init({ version: '2.0' });
+  piSdkInitialized = true;
+}
+
+async function ensurePiSdkReady() {
+  if (!isPiSdkAllowedRuntime()) return null;
+  if (typeof window === 'undefined') return null;
+
+  if (!window.Pi) {
+    await loadPiSdkScript();
+  }
+
+  initializePiSdkIfEnabled();
+  return window.Pi || null;
+}
+
+function loadPiSdkScript() {
+  if (typeof window === 'undefined') return Promise.resolve();
+  if (window.Pi) return Promise.resolve();
+  if (piSdkLoadPromise) return piSdkLoadPromise;
+
+  piSdkLoadPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector(`script[src="${PI_SDK_SCRIPT_SRC}"]`);
+
+    if (existingScript) {
+      existingScript.addEventListener('load', resolve, { once: true });
+      existingScript.addEventListener('error', reject, { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = PI_SDK_SCRIPT_SRC;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Official Pi SDK script could not be loaded.'));
+    document.head.appendChild(script);
+  });
+
+  return piSdkLoadPromise;
 }
 
 function getApiBaseUrl() {
@@ -37,7 +102,15 @@ function getApiBaseUrl() {
 }
 
 function apiPath(path) {
-  return `${getApiBaseUrl()}${path}`;
+  const apiBaseUrl = getApiBaseUrl();
+
+  if (!apiBaseUrl && isDeployedStaticFrontend()) {
+    throw new Error(
+      'Backend API URL is not configured. Set VITE_API_BASE_URL in Vercel to your deployed Render/Railway backend URL, then redeploy.',
+    );
+  }
+
+  return `${apiBaseUrl}${path}`;
 }
 
 async function postJson(path, body) {
@@ -100,6 +173,13 @@ async function createLocalMockPayment({
 }
 
 export function getPiIntegrationStatus() {
+  if (!isPiSdkAllowedRuntime()) {
+    return {
+      sdkAvailable: false,
+      mode: 'demo-no-pi-sdk',
+    };
+  }
+
   return {
     sdkAvailable: isPiSdkAvailable(),
     mode: isPiSdkAvailable() ? 'official-pi-sdk' : 'local-mock-fallback',
@@ -107,7 +187,7 @@ export function getPiIntegrationStatus() {
 }
 
 export async function authenticateWithPi() {
-  const pi = getPiSdk();
+  const pi = await ensurePiSdkReady();
 
   if (!pi?.authenticate) {
     return {
@@ -149,7 +229,7 @@ export async function createPiDepositPayment({
   sellerName,
   demoMode = false,
 }) {
-  const pi = getPiSdk();
+  const pi = await ensurePiSdkReady();
 
   if (demoMode || !pi?.createPayment) {
     return createLocalMockPayment({

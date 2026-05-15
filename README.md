@@ -71,15 +71,10 @@ Current demo mode records file metadata only. It does not upload or store binary
 
 ## Pi SDK integration
 
-`index.html` loads the official Pi JavaScript SDK:
+PiDeal loads the official Pi JavaScript SDK dynamically from `src/piPlaceholders.js` only when SDK testing is explicitly enabled:
 
-```html
-<script src="https://sdk.minepi.com/pi-sdk.js"></script>
-<script>
-  if (window.Pi) {
-    Pi.init({ version: "2.0" });
-  }
-</script>
+```text
+https://sdk.minepi.com/pi-sdk.js
 ```
 
 All Pi auth and payment logic is isolated in `src/piPlaceholders.js`:
@@ -147,6 +142,7 @@ Frontend `.env.local` values:
 
 ```text
 VITE_API_BASE_URL=
+VITE_ENABLE_PI_SDK=false
 ```
 
 Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API key. In production, configure `PI_API_KEY` and set `PI_USE_MOCK_PAYMENTS=false`.
@@ -154,6 +150,8 @@ Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API ke
 `FRONTEND_ORIGIN` should point to the deployed frontend URL. `FRONTEND_ORIGINS` can hold comma-separated extra origins. The backend also allows localhost and HTTPS Vercel preview domains ending in `.vercel.app`.
 
 `VITE_API_BASE_URL` controls where the React app sends `/api` calls. Leave it empty in local development so Vite can proxy `/api` to `http://127.0.0.1:4000`. Set it to the deployed backend HTTPS URL before building for Vercel or Netlify, for example `https://your-pideal-backend.onrender.com`.
+
+`VITE_ENABLE_PI_SDK=false` keeps deployed demo testing from trying real Pi SDK auth before Pi App Studio is ready. Set `VITE_ENABLE_PI_SDK=true` only after the Pi App Studio domain/setup is ready, or use `?pi_sdk=1` for an intentional one-off SDK test.
 
 Database setup:
 
@@ -208,10 +206,12 @@ Frontend on Vercel or Netlify:
 - Build command: `npm run build`
 - Publish directory: `dist`
 - Environment variable: `VITE_API_BASE_URL=https://your-deployed-backend`
+- Environment variable for demo testing: `VITE_ENABLE_PI_SDK=false`
 - Rebuild the frontend after changing `VITE_API_BASE_URL`; Vite embeds this value at build time.
 - The frontend is a single-page app. Pi auth and payment calls still stay isolated in `src/piPlaceholders.js`.
 - Before Pi App Studio submission, open the deployed frontend in a normal mobile browser and confirm Demo Buyer, Demo Seller, and Demo Admin can complete their flows without Pi Browser.
 - The deployed frontend must reach the backend API over HTTPS for services, orders, reports, and Pi payment callbacks.
+- If the deployed console shows `/api/services`, `/api/orders`, or `/api/reports` returning 404 from the Vercel domain, `VITE_API_BASE_URL` is missing or the frontend was not rebuilt after setting it.
 
 Backend on Render or Railway:
 
@@ -244,6 +244,7 @@ SQLite production limitation:
 - Confirm the deployed app shows Demo Buyer, Demo Seller, and Demo Admin before real Pi auth succeeds.
 - Confirm demo payments stay in mock mode on the deployed backend.
 - Confirm demo buttons disappear after a real Pi SDK authentication succeeds.
+- Confirm the Pi App Studio app domain matches the deployed frontend domain before expecting production Pi SDK auth to work.
 - Confirm `PI_API_KEY` is configured on the backend host.
 - Confirm `PI_USE_MOCK_PAYMENTS=false` in production.
 - Confirm database persistence survives backend restart or redeploy.

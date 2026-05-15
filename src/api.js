@@ -3,7 +3,15 @@ function getApiBaseUrl() {
 }
 
 function apiPath(path) {
-  return `${getApiBaseUrl()}${path}`;
+  const apiBaseUrl = getApiBaseUrl();
+
+  if (!apiBaseUrl && isDeployedStaticFrontend()) {
+    throw new Error(
+      'Backend API URL is not configured. Set VITE_API_BASE_URL in Vercel to your deployed Render/Railway backend URL, then redeploy.',
+    );
+  }
+
+  return `${apiBaseUrl}${path}`;
 }
 
 async function requestJson(path, options = {}) {
@@ -97,4 +105,10 @@ export async function createReport(report) {
 export async function resolveReportById(reportId) {
   const data = await postJson(`/api/reports/${encodeURIComponent(reportId)}/resolve`, {});
   return data.report;
+}
+
+function isDeployedStaticFrontend() {
+  if (typeof window === 'undefined') return false;
+
+  return !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 }
