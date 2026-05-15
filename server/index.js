@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 
 import { allowLocalDevCors } from './middleware/cors.js';
-import { prisma, ensureUser, ensureServiceSnapshot, shutdown } from './utils/db.js';
+import { prisma, ensureUser, shutdown } from './utils/db.js';
 import { callPiPlatform } from './utils/piClient.js';
 import {
   normalizePaymentRequest,
@@ -28,8 +28,10 @@ const DEMO_ADMIN_IDS = (process.env.DEMO_ADMIN_IDS || 'admin-lina')
   .filter(Boolean);
 
 const ORDER_STATUS = {
+  REQUESTED: 'Requested',
   PENDING_PAYMENT: 'Pending Payment',
   PAID: 'Paid',
+  DEPOSIT_PAID: 'Deposit Paid',
   IN_PROGRESS: 'In Progress',
   DELIVERED: 'Delivered',
   COMPLETED: 'Completed',
@@ -48,6 +50,7 @@ const ORDER_INCLUDE = {
     orderBy: { updatedAt: 'desc' },
   },
   review: true,
+  service: true,
 };
 
 const REPORT_INCLUDE = {
@@ -235,7 +238,7 @@ app.post('/api/orders', async (request, response, next) => {
         sellerId: service.sellerId,
         buyerName: buyer.username,
         sellerName: service.seller?.username || 'Pi seller',
-        status: ORDER_STATUS.PENDING_PAYMENT,
+        status: ORDER_STATUS.REQUESTED,
         buyerNote: orderInput.buyerNote,
         requestSourceText: orderInput.requestSourceText,
         requestReferenceLink: orderInput.requestReferenceLink,
@@ -255,14 +258,36 @@ app.post('/api/orders', async (request, response, next) => {
   }
 });
 
+app.post('/api/orders/:orderId/accept', async (request, response, next) => {
+  try {
+    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
+    if (!order) {
+      return response.status(404).json({ ok: false, error: 'Order was not found.' });
+    }
+    if (order.status !== ORDER_STATUS.REQUESTED) {
+      return response.status(409).json({ ok: false, error: 'Only requested orders can be accepted by the seller.' });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: request.params.orderId },
+      data: { status: ORDER_STATUS.PENDING_PAYMENT },
+      include: ORDER_INCLUDE,
+    });
+
+    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.post('/api/orders/:orderId/start', async (request, response, next) => {
   try {
     const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
     if (!order) {
       return response.status(404).json({ ok: false, error: 'Order was not found.' });
     }
-    if (order.status !== ORDER_STATUS.PAID) {
-      return response.status(409).json({ ok: false, error: 'Only paid orders can move to In Progress.' });
+    if (![ORDER_STATUS.DEPOSIT_PAID, ORDER_STATUS.PAID].includes(order.status)) {
+      return response.status(409).json({ ok: false, error: 'Only deposit-paid orders can move to In Progress.' });
     }
 
     const updatedOrder = await prisma.order.update({
@@ -307,12 +332,15 @@ app.post('/api/orders/:orderId/deliver', async (request, response, next) => {
 
 app.post('/api/orders/:orderId/confirm', async (request, response, next) => {
   try {
-    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
+    const order = await findOrderById(request.params.orderId);
     if (!order) {
       return response.status(404).json({ ok: false, error: 'Order was not found.' });
     }
     if (order.status !== ORDER_STATUS.DELIVERED) {
       return response.status(409).json({ ok: false, error: 'Only delivered orders can be confirmed.' });
+    }
+    if (calculateRemainingPi(order) > 0) {
+      return response.status(409).json({ ok: false, error: 'Remaining balance must be paid before the order can be completed.' });
     }
 
     const updatedOrder = await prisma.order.update({
@@ -503,81 +531,47 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
       return response.status(400).json({ ok: false, error: 'paymentId and orderId are required.' });
     }
 
-    const buyer = await ensureUser(
-      paymentRequest.buyerId || `buyer-${paymentRequest.orderId}`,
-      paymentRequest.buyerName || 'Pi buyer',
-      'user',
-    );
-    const seller = await ensureUser(
-      paymentRequest.sellerId || `seller-${paymentRequest.serviceId || paymentRequest.orderId}`,
-      paymentRequest.sellerName || 'Pi seller',
-      'user',
-    );
+    const orderForPayment = await findOrderById(paymentRequest.orderId);
+    if (!orderForPayment) {
+      return response.status(404).json({ ok: false, error: 'Order must be created before payment approval.' });
+    }
 
-    await ensureServiceSnapshot({
-      serviceId: paymentRequest.serviceId,
-      sellerId: seller.id,
-      amountPi: paymentRequest.amountPi,
-    });
+    const serverPaymentRequest = resolveServerPaymentRequest(orderForPayment, paymentRequest);
 
     const useMockPayment = USE_MOCK_PAYMENTS || paymentRequest.demoMode;
 
     const piPayment = useMockPayment
-      ? createMockPaymentDto({ ...paymentRequest, phase: 'approved' })
+      ? createMockPaymentDto({ ...serverPaymentRequest, phase: 'approved' })
       : await callPiPlatform(`/payments/${encodeURIComponent(paymentId)}/approve`);
 
-    const { order, payment } = await prisma.$transaction(async (tx) => {
-      const order = await tx.order.upsert({
-        where: { id: paymentRequest.orderId },
-        create: {
-          id: paymentRequest.orderId,
-          serviceId: paymentRequest.serviceId,
-          buyerId: buyer.id,
-          sellerId: seller.id,
-          buyerName: buyer.username,
-          sellerName: seller.username,
-          status: ORDER_STATUS.PENDING_PAYMENT,
-          amountPi: paymentRequest.amountPi,
-          platformFeePi: calculatePlatformFee(paymentRequest.amountPi),
-        },
-        update: {
-          serviceId: paymentRequest.serviceId,
-          buyerId: buyer.id,
-          sellerId: seller.id,
-          buyerName: buyer.username,
-          sellerName: seller.username,
-          amountPi: paymentRequest.amountPi,
-          platformFeePi: calculatePlatformFee(paymentRequest.amountPi),
-        },
-      });
-
+    const payment = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.upsert({
         where: { id: paymentId },
         create: {
           id: paymentId,
-          orderId: paymentRequest.orderId,
-          serviceId: paymentRequest.serviceId,
-          amountPi: paymentRequest.amountPi,
-          mode: paymentRequest.mode,
+          orderId: serverPaymentRequest.orderId,
+          serviceId: serverPaymentRequest.serviceId,
+          amountPi: serverPaymentRequest.amountPi,
+          mode: serverPaymentRequest.mode,
           status: 'approved',
           mock: useMockPayment,
           piPaymentJson: stringifyJson(piPayment),
         },
         update: {
-          orderId: paymentRequest.orderId,
-          serviceId: paymentRequest.serviceId,
-          amountPi: paymentRequest.amountPi,
-          mode: paymentRequest.mode,
+          orderId: serverPaymentRequest.orderId,
+          serviceId: serverPaymentRequest.serviceId,
+          amountPi: serverPaymentRequest.amountPi,
+          mode: serverPaymentRequest.mode,
           status: 'approved',
           mock: useMockPayment,
           piPaymentJson: stringifyJson(piPayment),
         },
       });
 
-      return { order, payment };
+      return payment;
     });
 
-    const storedOrder = await findOrderById(order.id);
+    const storedOrder = await findOrderById(serverPaymentRequest.orderId);
 
     return response.json({
       ok: true,
@@ -602,7 +596,14 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
 
     const existingPayment = await prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { order: true },
+      include: {
+        order: {
+          include: {
+            service: true,
+            payments: true,
+          },
+        },
+      },
     });
 
     if (!existingPayment) {
@@ -631,6 +632,9 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
         })
       : await callPiPlatform(`/payments/${encodeURIComponent(paymentId)}/complete`, { txid });
 
+    const nextStatus = resolveStatusAfterPayment(existingPayment.order, existingPayment);
+    const nextPaidTotal = calculatePaidTotal(existingPayment.order, existingPayment);
+
     const { order, payment } = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.update({
         where: { id: paymentId },
@@ -645,11 +649,11 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
       const order = await tx.order.update({
         where: { id: orderId },
         data: {
-          status: ORDER_STATUS.PAID,
+          status: nextStatus,
           paidAt: new Date(),
           paymentMode: normalizePaymentMode(existingPayment.mode),
-          amountPi: existingPayment.amountPi,
-          platformFeePi: calculatePlatformFee(existingPayment.amountPi),
+          amountPi: nextPaidTotal,
+          platformFeePi: calculatePlatformFee(nextPaidTotal),
         },
       });
 
@@ -780,6 +784,101 @@ async function findOrderById(orderId) {
     where: { id: orderId },
     include: ORDER_INCLUDE,
   });
+}
+
+function resolveServerPaymentRequest(order, paymentRequest) {
+  if (!order.service) {
+    badRequest('Order service is required before payment.');
+  }
+
+  const mode = ['deposit', 'full', 'balance'].includes(paymentRequest.mode)
+    ? paymentRequest.mode
+    : 'deposit';
+  const servicePrice = Number(order.service.pricePi || 0);
+  const depositPi = Number(order.service.depositPi || 0);
+  const remainingPi = calculateRemainingPi(order);
+
+  if (mode === 'deposit') {
+    if (order.status !== ORDER_STATUS.PENDING_PAYMENT) {
+      badRequest('Deposit can only be paid after seller acceptance.');
+    }
+    return {
+      ...paymentRequest,
+      serviceId: order.serviceId,
+      amountPi: Number(Math.min(depositPi, servicePrice).toFixed(2)),
+      mode,
+      buyerId: order.buyerId,
+      buyerName: order.buyerName,
+      sellerId: order.sellerId,
+      sellerName: order.sellerName,
+    };
+  }
+
+  if (mode === 'full') {
+    if (order.status !== ORDER_STATUS.PENDING_PAYMENT) {
+      badRequest('Full payment can only be paid before work starts.');
+    }
+    return {
+      ...paymentRequest,
+      serviceId: order.serviceId,
+      amountPi: Number(servicePrice.toFixed(2)),
+      mode,
+      buyerId: order.buyerId,
+      buyerName: order.buyerName,
+      sellerId: order.sellerId,
+      sellerName: order.sellerName,
+    };
+  }
+
+  if (order.status !== ORDER_STATUS.DELIVERED) {
+    badRequest('Remaining balance can only be paid after seller delivery.');
+  }
+  if (remainingPi <= 0) {
+    badRequest('No remaining balance is due for this order.');
+  }
+
+  return {
+    ...paymentRequest,
+    serviceId: order.serviceId,
+    amountPi: remainingPi,
+    mode,
+    buyerId: order.buyerId,
+    buyerName: order.buyerName,
+    sellerId: order.sellerId,
+    sellerName: order.sellerName,
+  };
+}
+
+function resolveStatusAfterPayment(order, payment) {
+  const paidTotal = calculatePaidTotal(order, payment);
+  const servicePrice = Number(order.service?.pricePi || 0);
+  const isFullyPaid = servicePrice > 0 && paidTotal + 0.00001 >= servicePrice;
+
+  if (payment.mode === 'balance') {
+    return isFullyPaid ? ORDER_STATUS.COMPLETED : ORDER_STATUS.DELIVERED;
+  }
+
+  if (payment.mode === 'full') {
+    return order.status === ORDER_STATUS.DELIVERED ? ORDER_STATUS.COMPLETED : ORDER_STATUS.PAID;
+  }
+
+  return isFullyPaid ? ORDER_STATUS.PAID : ORDER_STATUS.DEPOSIT_PAID;
+}
+
+function calculatePaidTotal(order, currentPayment = null) {
+  const paidFromOtherPayments = (order.payments || [])
+    .filter((payment) => payment.status === 'completed' && payment.id !== currentPayment?.id)
+    .reduce((sum, payment) => sum + Number(payment.amountPi || 0), 0);
+
+  const currentPaymentAmount = currentPayment ? Number(currentPayment.amountPi || 0) : 0;
+
+  return Number((paidFromOtherPayments + currentPaymentAmount).toFixed(2));
+}
+
+function calculateRemainingPi(order) {
+  const servicePrice = Number(order.service?.pricePi || 0);
+  const paidTotal = calculatePaidTotal(order);
+  return Number(Math.max(servicePrice - paidTotal, 0).toFixed(2));
 }
 
 async function requireAdmin(request, response, next) {

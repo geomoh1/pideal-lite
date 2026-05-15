@@ -3,9 +3,11 @@ import { PrismaClient } from '@prisma/client';
 
 const baseUrl = 'http://127.0.0.1:4000';
 const startedAt = Date.now();
-const paymentId = `smoke-payment-${startedAt}`;
+const depositPaymentId = `smoke-payment-${startedAt}-deposit`;
+const balancePaymentId = `smoke-payment-${startedAt}-balance`;
 const serviceId = `smoke-service-${startedAt}`;
-const txid = `smoke-tx-${startedAt}`;
+const depositTxid = `smoke-tx-${startedAt}-deposit`;
+const balanceTxid = `smoke-tx-${startedAt}-balance`;
 const prisma = new PrismaClient();
 
 const server = spawn(process.execPath, ['server/index.js'], {
@@ -132,10 +134,10 @@ try {
     requestFileSize: '14 KB',
   });
   const orderId = createdOrder.order.id;
-  assertEqual(createdOrder.order.status, 'Pending Payment', 'New orders must start Pending Payment.');
+  assertEqual(createdOrder.order.status, 'Requested', 'New orders must start as seller-review requests.');
   assertEqual(createdOrder.order.requestFileName, 'smoke-reference.png', 'Order request metadata must persist.');
 
-  const approval = await postJson(`/api/pi/payments/${paymentId}/approve`, {
+  const rejectedEarlyPayment = await postJsonExpectFailure(`/api/pi/payments/${depositPaymentId}-early/approve`, {
     orderId,
     serviceId,
     amountPi: 4,
@@ -146,8 +148,25 @@ try {
     sellerName: 'smoke.seller',
     demoMode: true,
   });
+  assertEqual(rejectedEarlyPayment.status, 400, 'Deposit cannot be paid before seller acceptance.');
+
+  const acceptedOrder = await postJson(`/api/orders/${orderId}/accept`, {});
+  assertEqual(acceptedOrder.order.status, 'Pending Payment', 'Accepted requests must wait for the buyer deposit.');
+
+  const approval = await postJson(`/api/pi/payments/${depositPaymentId}/approve`, {
+    orderId,
+    serviceId,
+    amountPi: 99,
+    mode: 'deposit',
+    buyerId: 'smoke-buyer',
+    buyerName: 'smoke.buyer',
+    sellerId: 'smoke-seller',
+    sellerName: 'smoke.seller',
+    demoMode: true,
+  });
 
   assertEqual(approval.order.status, 'Pending Payment', 'Approval must not mark order as Paid.');
+  assertEqual(approval.payment.amountPi, 4, 'Server must calculate the deposit amount from the service.');
   assertEqual(approval.mock, true, 'Demo approval must stay in mock mode.');
 
   const smokeUsers = await prisma.user.findMany({
@@ -162,12 +181,14 @@ try {
   const beforeCompletion = await getJson(`/api/orders/${orderId}/status`);
   assertEqual(beforeCompletion.order.status, 'Pending Payment', 'Stored order must remain Pending Payment before completion.');
 
-  const completion = await postJson(`/api/pi/payments/${paymentId}/complete`, {
+  const completion = await postJson(`/api/pi/payments/${depositPaymentId}/complete`, {
     orderId,
-    txid,
+    txid: depositTxid,
   });
 
-  assertEqual(completion.order.status, 'Paid', 'Completion must mark order as Paid.');
+  assertEqual(completion.order.status, 'Deposit Paid', 'Deposit completion must not mark the full order completed.');
+  assertEqual(completion.order.paidPi, 4, 'Deposit completion must record only the paid deposit.');
+  assertEqual(completion.order.remainingPi, 6, 'Deposit completion must keep the remaining balance due.');
   assertEqual(completion.mock, true, 'Demo completion must stay in mock mode.');
 
   const started = await postJson(`/api/orders/${orderId}/start`, {});
@@ -182,8 +203,28 @@ try {
   assertEqual(delivered.order.status, 'Delivered', 'Seller delivery must move order to Delivered.');
   assertEqual(delivered.order.deliveryFileName, 'smoke-delivery.zip', 'Delivery metadata must persist.');
 
-  const confirmed = await postJson(`/api/orders/${orderId}/confirm`, {});
-  assertEqual(confirmed.order.status, 'Completed', 'Buyer confirmation must complete the order.');
+  const rejectedConfirm = await postJsonExpectFailure(`/api/orders/${orderId}/confirm`, {});
+  assertEqual(rejectedConfirm.status, 409, 'Buyer confirmation must not complete the order while balance is due.');
+
+  const balanceApproval = await postJson(`/api/pi/payments/${balancePaymentId}/approve`, {
+    orderId,
+    serviceId,
+    amountPi: 999,
+    mode: 'balance',
+    buyerId: 'smoke-buyer',
+    buyerName: 'smoke.buyer',
+    sellerId: 'smoke-seller',
+    sellerName: 'smoke.seller',
+    demoMode: true,
+  });
+  assertEqual(balanceApproval.payment.amountPi, 6, 'Server must calculate the remaining balance from completed payments.');
+
+  const balanceCompletion = await postJson(`/api/pi/payments/${balancePaymentId}/complete`, {
+    orderId,
+    txid: balanceTxid,
+  });
+  assertEqual(balanceCompletion.order.status, 'Completed', 'Remaining balance completion must complete the order.');
+  assertEqual(balanceCompletion.order.paidPi, 10, 'Completed order must show the full paid service price.');
 
   const reviewed = await postJson(`/api/orders/${orderId}/review`, { rating: 5 });
   assertEqual(reviewed.order.rating, 5, 'Review rating must persist on the order response.');

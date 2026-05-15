@@ -99,6 +99,11 @@ export async function createOrder(order) {
   return data.order;
 }
 
+export async function acceptOrder(orderId) {
+  const data = await postJson(`/api/orders/${encodeURIComponent(orderId)}/accept`, {});
+  return data.order;
+}
+
 export async function startOrder(orderId) {
   const data = await postJson(`/api/orders/${encodeURIComponent(orderId)}/start`, {});
   return data.order;

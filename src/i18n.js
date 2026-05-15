@@ -92,18 +92,40 @@ const ar = {
   'Reference file': 'ملف مرجعي',
   'No file selected': 'لم يتم اختيار ملف',
   'Pi Login to order': 'سجل دخول Pi للطلب',
+  'Request sent. Waiting for the seller to accept before deposit payment.':
+    'تم إرسال الطلب. بانتظار قبول البائع قبل دفع العربون.',
+  'This order is not ready for that payment step.': 'هذا الطلب غير جاهز لخطوة الدفع هذه.',
+  'No remaining balance is due for this order.': 'لا يوجد مبلغ متبق لهذا الطلب.',
+  'Payment server did not move this order to the expected escrow state.':
+    'سيرفر الدفع لم ينقل الطلب إلى حالة الضمان المتوقعة.',
+  'Remaining balance completed. The order is now complete and ready for rating.':
+    'تم دفع المتبقي. أصبح الطلب مكتملًا وجاهزًا للتقييم.',
+  'Deposit completed by the backend. The seller can start work now.':
+    'تم دفع العربون عبر الباكند. يمكن للبائع بدء العمل الآن.',
+  'Request accepted. Buyer can pay the deposit now.': 'تم قبول الطلب. يمكن للمشتري دفع العربون الآن.',
+  'Order request could not be accepted.': 'تعذر قبول الطلب.',
+  'Delivery confirmation failed. Pay the remaining balance first if any amount is still due.':
+    'فشل تأكيد التسليم. ادفع المتبقي أولًا إذا كان هناك مبلغ مستحق.',
+  'Delivery confirmed and fully paid. You can rate the seller now.':
+    'تم تأكيد التسليم ودفع المبلغ كاملًا. يمكنك الآن تقييم البائع.',
   'This is your listing. New buyer requests appear in Orders > Selling.':
     'هذه خدمتك. طلبات المشترين الجديدة تظهر في الطلبات > البيع.',
   'This seller is blocked while admin reviews trust and safety reports.':
     'هذا البائع محظور أثناء مراجعة الأدمن لبلاغات الثقة والسلامة.',
 
   Pay: 'ادفع',
+  Request: 'الطلب',
+  Accept: 'القبول',
+  Deposit: 'العربون',
+  Balance: 'المتبقي',
   Paid: 'مدفوع',
   Work: 'العمل',
   Rating: 'التقييم',
   'Order progress': 'تقدم الطلب',
   'Order status': 'حالة الطلب',
+  Requested: 'بانتظار قبول البائع',
   'Pending Payment': 'بانتظار الدفع',
+  'Deposit Paid': 'العربون مدفوع',
   'In Progress': 'قيد التنفيذ',
   Delivered: 'تم التسليم',
   Completed: 'مكتمل',
@@ -111,11 +133,13 @@ const ar = {
   Refunded: 'مسترد',
   Cancelled: 'ملغي',
   'No buyer note added.': 'لم يضف المشتري ملاحظة.',
+  'Waiting for seller acceptance before deposit payment.': 'بانتظار قبول البائع قبل دفع العربون.',
   'Waiting for seller delivery.': 'بانتظار تسليم البائع.',
   'Seller delivery': 'تسليم البائع',
   'Confirm delivery': 'تأكيد التسليم',
   Dispute: 'فتح نزاع',
   'Buyer materials': 'مواد المشتري',
+  Remaining: 'المتبقي',
 
   'Seller flow': 'مسار البائع',
   'Add service': 'إضافة خدمة',
@@ -157,11 +181,13 @@ const ar = {
   'Not paid': 'غير مدفوع',
   Cancel: 'إلغاء',
   'Start work': 'بدء العمل',
+  'Accept request': 'قبول الطلب',
   'Delivery message': 'رسالة التسليم',
   'Describe the completed work': 'صف العمل المكتمل',
   'Delivery link': 'رابط التسليم',
   'Delivery file': 'ملف التسليم',
   'Submit delivery': 'إرسال التسليم',
+  'Remaining balance': 'المبلغ المتبقي',
   'Seller rating': 'تقييم البائع',
 
   'Pi user': 'مستخدم Pi',
@@ -279,6 +305,10 @@ const arPatterns = [
   {
     pattern: /^Pay (.+) Pi deposit$/,
     render: ([, amount]) => `ادفع عربون ${amount} Pi`,
+  },
+  {
+    pattern: /^Pay remaining (.+) Pi$/,
+    render: ([, amount]) => `ادفع المتبقي ${amount} Pi`,
   },
   {
     pattern: /^Pay (.+) Pi full$/,

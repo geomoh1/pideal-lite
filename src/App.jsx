@@ -32,6 +32,7 @@ import {
   getPiIntegrationStatus,
 } from './piPlaceholders.js';
 import {
+  acceptOrder as acceptOrderApi,
   cancelOrder as cancelOrderApi,
   createOrder as createOrderApi,
   createReport as createReportApi,
@@ -59,8 +60,10 @@ import {
 } from './i18n.js';
 
 const ORDER_STATUS = {
+  REQUESTED: 'Requested',
   PENDING_PAYMENT: 'Pending Payment',
   PAID: 'Paid',
+  DEPOSIT_PAID: 'Deposit Paid',
   IN_PROGRESS: 'In Progress',
   DELIVERED: 'Delivered',
   COMPLETED: 'Completed',
@@ -131,11 +134,12 @@ const demoUsers = [
 ];
 
 const orderFlowSteps = [
-  { status: ORDER_STATUS.PENDING_PAYMENT, label: 'Pay' },
-  { status: ORDER_STATUS.PAID, label: 'Paid' },
+  { status: ORDER_STATUS.REQUESTED, label: 'Request' },
+  { status: ORDER_STATUS.PENDING_PAYMENT, label: 'Accept' },
+  { status: ORDER_STATUS.DEPOSIT_PAID, label: 'Deposit' },
   { status: ORDER_STATUS.IN_PROGRESS, label: 'Work' },
   { status: ORDER_STATUS.DELIVERED, label: 'Delivery' },
-  { status: ORDER_STATUS.COMPLETED, label: 'Rating' },
+  { status: ORDER_STATUS.COMPLETED, label: 'Balance' },
 ];
 
 function App() {
@@ -432,7 +436,7 @@ function App() {
     try {
       const createdOrder = await createOrderApi(orderRequest);
       setFlowError('');
-      setFlowNotice('Order created. Choose a deposit or full payment to continue.');
+      setFlowNotice('Request sent. Waiting for the seller to accept before deposit payment.');
       setOrders((current) => [createdOrder, ...current.filter((item) => item.id !== createdOrder.id)]);
       setRequestNote('');
       setRequestAsset(blankRequestAsset);
@@ -446,13 +450,25 @@ function App() {
     const order = orders.find((item) => item.id === orderId);
     const service = services.find((item) => item.id === order?.serviceId);
     if (!order || !service) return;
-    if (order.status !== ORDER_STATUS.PENDING_PAYMENT) {
-      setFlowError('This order is not waiting for payment.');
+
+    const paymentIsAllowed =
+      (mode === 'deposit' && order.status === ORDER_STATUS.PENDING_PAYMENT) ||
+      (mode === 'balance' && order.status === ORDER_STATUS.DELIVERED) ||
+      (mode === 'full' && order.status === ORDER_STATUS.PENDING_PAYMENT);
+
+    if (!paymentIsAllowed) {
+      setFlowError('This order is not ready for that payment step.');
       setFlowNotice('');
       return;
     }
 
-    const amountPi = mode === 'full' ? service.pricePi : service.depositPi;
+    const remainingPi = getRemainingPi(order, service);
+    const amountPi = mode === 'balance' ? remainingPi : mode === 'full' ? service.pricePi : service.depositPi;
+    if (mode === 'balance' && remainingPi <= 0) {
+      setFlowError('No remaining balance is due for this order.');
+      setFlowNotice('');
+      return;
+    }
 
     let paymentResult;
     try {
@@ -468,8 +484,12 @@ function App() {
         sellerName: order.sellerName,
         demoMode: user?.demoMode === true,
       });
-      if (paymentResult.order?.status !== ORDER_STATUS.PAID) {
-        throw new Error('Payment server did not mark this order as paid.');
+      const expectedStatuses =
+        mode === 'balance'
+          ? [ORDER_STATUS.COMPLETED]
+          : [ORDER_STATUS.DEPOSIT_PAID, ORDER_STATUS.PAID];
+      if (!expectedStatuses.includes(paymentResult.order?.status)) {
+        throw new Error('Payment server did not move this order to the expected escrow state.');
       }
       setFlowError('');
     } catch (error) {
@@ -482,12 +502,28 @@ function App() {
       return;
     }
 
-    setFlowNotice('Payment completed by the backend. The seller can start work now.');
+    setFlowNotice(
+      mode === 'balance'
+        ? 'Remaining balance completed. The order is now complete and ready for rating.'
+        : 'Deposit completed by the backend. The seller can start work now.',
+    );
     setOrders((current) =>
       current.map((item) =>
         item.id === orderId ? { ...paymentResult.order, payment: paymentResult.payment } : item,
       ),
     );
+  }
+
+  async function handleAcceptOrder(orderId) {
+    try {
+      const updatedOrder = await acceptOrderApi(orderId);
+      setFlowNotice('Request accepted. Buyer can pay the deposit now.');
+      setFlowError('');
+      replaceOrder(updatedOrder);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Order request could not be accepted.'));
+      setFlowNotice('');
+    }
   }
 
   async function handleStartOrder(orderId) {
@@ -552,12 +588,12 @@ function App() {
         replaceOrder(confirmation.order);
       }
     } catch {
-      setFlowError('Delivery confirmation failed. Recheck the official Pi completion flow later.');
+      setFlowError('Delivery confirmation failed. Pay the remaining balance first if any amount is still due.');
       setFlowNotice('');
       return;
     }
 
-    setFlowNotice('Delivery confirmed. You can rate the seller now.');
+    setFlowNotice('Delivery confirmed and fully paid. You can rate the seller now.');
   }
 
   async function handleRateOrder(orderId, rating) {
@@ -777,6 +813,7 @@ function App() {
             updateDeliveryDraft={updateDeliveryDraft}
             openService={openService}
             onPay={handlePayOrder}
+            onAcceptOrder={handleAcceptOrder}
             onStartOrder={handleStartOrder}
             onDeliverOrder={handleDeliverOrder}
             onConfirmDelivery={handleConfirmDelivery}
@@ -1233,6 +1270,8 @@ function OrderProgress({
   deliveryConfirmed,
   canConfirm,
 }) {
+  const remainingPi = getRemainingPi(order, service);
+
   return (
     <Localized>
     <div className="order-status">
@@ -1244,20 +1283,20 @@ function OrderProgress({
       <OrderMaterials order={order} />
       <StatusTimeline status={order.status} />
 
+      {order.status === ORDER_STATUS.REQUESTED && (
+        <StatusHint icon={<Clock3 size={18} />} text="Waiting for seller acceptance before deposit payment." />
+      )}
+
       {order.status === ORDER_STATUS.PENDING_PAYMENT && (
         <div className="payment-actions">
           <button className="primary-button" onClick={() => onPay(order.id, 'deposit')}>
             <CircleDollarSign size={18} />
             Pay {service.depositPi} Pi deposit
           </button>
-          <button className="secondary-button" onClick={() => onPay(order.id, 'full')}>
-            <CircleDollarSign size={18} />
-            Pay {service.pricePi} Pi full
-          </button>
         </div>
       )}
 
-      {[ORDER_STATUS.PAID, ORDER_STATUS.IN_PROGRESS].includes(order.status) && (
+      {[ORDER_STATUS.DEPOSIT_PAID, ORDER_STATUS.PAID, ORDER_STATUS.IN_PROGRESS].includes(order.status) && (
         <StatusHint icon={<Clock3 size={18} />} text="Waiting for seller delivery." />
       )}
 
@@ -1274,10 +1313,17 @@ function OrderProgress({
               {order.deliveryFileName} {order.deliveryFileSize ? `(${order.deliveryFileSize})` : ''}
             </span>
           )}
-          <button className="secondary-button" onClick={() => onConfirmDelivery(order.id)}>
-            <ShieldCheck size={18} />
-            Confirm delivery
-          </button>
+          {remainingPi > 0 ? (
+            <button className="secondary-button" onClick={() => onPay(order.id, 'balance')}>
+              <CircleDollarSign size={18} />
+              Pay remaining {remainingPi} Pi
+            </button>
+          ) : (
+            <button className="secondary-button" onClick={() => onConfirmDelivery(order.id)}>
+              <ShieldCheck size={18} />
+              Confirm delivery
+            </button>
+          )}
           <button className="ghost-button small" onClick={() => onDisputeOrder(order.id)}>
             <AlertTriangle size={16} />
             Dispute
@@ -1297,7 +1343,8 @@ function OrderProgress({
 }
 
 function StatusTimeline({ status }) {
-  const activeIndex = orderFlowSteps.findIndex((step) => step.status === status);
+  const timelineStatus = status === ORDER_STATUS.PAID ? ORDER_STATUS.DEPOSIT_PAID : status;
+  const activeIndex = orderFlowSteps.findIndex((step) => step.status === timelineStatus);
   const isStopped = [ORDER_STATUS.DISPUTED, ORDER_STATUS.REFUNDED, ORDER_STATUS.CANCELLED].includes(status);
 
   return (
@@ -1553,6 +1600,7 @@ function OrdersView({
   updateDeliveryDraft,
   openService,
   onPay,
+  onAcceptOrder,
   onStartOrder,
   onDeliverOrder,
   onConfirmDelivery,
@@ -1603,6 +1651,7 @@ function OrdersView({
               updateDeliveryDraft={updateDeliveryDraft}
               openService={openService}
               onPay={onPay}
+              onAcceptOrder={onAcceptOrder}
               onStartOrder={onStartOrder}
               onDeliverOrder={onDeliverOrder}
               onConfirmDelivery={onConfirmDelivery}
@@ -1633,6 +1682,7 @@ function OrderCard({
   updateDeliveryDraft,
   openService,
   onPay,
+  onAcceptOrder,
   onStartOrder,
   onDeliverOrder,
   onConfirmDelivery,
@@ -1644,6 +1694,7 @@ function OrderCard({
     draft.deliveryMessage?.trim() || draft.deliveryLink?.trim() || draft.deliveryFileName,
   );
   const counterpart = mode === 'seller' ? `Buyer: ${order.buyerName}` : `Seller: ${order.sellerName}`;
+  const remainingPi = getRemainingPi(order, service);
 
   return (
     <Localized>
@@ -1656,17 +1707,30 @@ function OrderCard({
       <OrderMaterials order={order} />
       <div className="order-meta-grid">
         <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
+        <Metric label="Remaining" value={`${remainingPi} Pi`} />
         <Metric label="Fee 5%" value={`${order.platformFeePi || 0} Pi`} />
-        <Metric label="Mode" value={order.paymentMode ?? 'Not paid'} />
       </div>
+
+      {mode === 'seller' && order.status === ORDER_STATUS.REQUESTED && (
+        <div className="payment-actions">
+          <button className="secondary-button" onClick={() => onAcceptOrder(order.id)}>
+            <CheckCircle2 size={18} />
+            Accept request
+          </button>
+          <button className="ghost-button small" onClick={() => onCancelOrder(order.id)}>
+            Reject
+          </button>
+        </div>
+      )}
+
+      {mode === 'buyer' && order.status === ORDER_STATUS.REQUESTED && (
+        <StatusHint icon={<Clock3 size={18} />} text="Waiting for seller acceptance before deposit payment." />
+      )}
 
       {mode === 'buyer' && order.status === ORDER_STATUS.PENDING_PAYMENT && (
         <div className="payment-actions">
           <button className="primary-button" onClick={() => onPay(order.id, 'deposit')}>
             Pay {service.depositPi} Pi deposit
-          </button>
-          <button className="secondary-button" onClick={() => onPay(order.id, 'full')}>
-            Pay {service.pricePi} Pi full
           </button>
           <button className="ghost-button small" onClick={() => onCancelOrder(order.id)}>
             Cancel
@@ -1674,7 +1738,7 @@ function OrderCard({
         </div>
       )}
 
-      {mode === 'seller' && order.status === ORDER_STATUS.PAID && (
+      {mode === 'seller' && [ORDER_STATUS.DEPOSIT_PAID, ORDER_STATUS.PAID].includes(order.status) && (
         <button className="secondary-button" onClick={() => onStartOrder(order.id)}>
           <Clock3 size={18} />
           Start work
@@ -1732,9 +1796,15 @@ function OrderCard({
               {order.deliveryFileName} {order.deliveryFileSize ? `(${order.deliveryFileSize})` : ''}
             </span>
           )}
-          <button className="secondary-button" onClick={() => onConfirmDelivery(order.id)}>
-            Confirm delivery
-          </button>
+          {remainingPi > 0 ? (
+            <button className="secondary-button" onClick={() => onPay(order.id, 'balance')}>
+              Pay remaining {remainingPi} Pi
+            </button>
+          ) : (
+            <button className="secondary-button" onClick={() => onConfirmDelivery(order.id)}>
+              Confirm delivery
+            </button>
+          )}
           <button className="ghost-button small" onClick={() => onDisputeOrder(order.id)}>
             Dispute
           </button>
@@ -2067,6 +2137,12 @@ function formatFileSize(bytes) {
 
 function getErrorMessage(error, fallback) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function getRemainingPi(order, service) {
+  const pricePi = Number(service?.pricePi || 0);
+  const paidPi = Number(order?.paidPi || 0);
+  return Number(Math.max(pricePi - paidPi, 0).toFixed(2));
 }
 
 function formatSellerStatus(status) {

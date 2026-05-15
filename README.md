@@ -27,13 +27,13 @@ PiDeal Lite is a mobile-first React marketplace for Pi Browser where Pi Network 
 Browse mode:
 
 ```text
-Open App -> Pi Login -> Browse -> Service Details -> Add brief/materials -> Order -> Pi Payment -> Delivery -> Confirm -> Rating
+Open App -> Pi Login -> Browse -> Service Details -> Add brief/materials -> Seller accepts -> Pay deposit -> Delivery -> Pay remaining balance -> Rating
 ```
 
 Sell mode:
 
 ```text
-Login -> Add Service -> Pending Review -> Approved -> Receive Order materials -> Deliver message/link/file -> Buyer Confirms -> Rating
+Login -> Add Service -> Pending Review -> Approved -> Receive Order materials -> Accept request -> Deposit paid -> Deliver message/link/file -> Buyer pays remaining balance -> Rating
 ```
 
 Admin mode:
@@ -44,8 +44,10 @@ Admin placeholder -> Review Services -> Approve/Reject -> Monitor Orders -> Reso
 
 ## Order statuses
 
+- Requested
 - Pending Payment
 - Paid
+- Deposit Paid
 - In Progress
 - Delivered
 - Completed
@@ -72,8 +74,10 @@ PiDeal uses a lightweight trust model for the MVP:
 Payments use logical escrow state, not internal wallets or balances:
 
 ```text
-Pending Payment -> Paid -> In Progress -> Delivered -> Completed
+Requested -> Pending Payment -> Deposit Paid -> In Progress -> Delivered -> Completed
 ```
+
+The buyer first sends requirements/materials. The seller must accept the request before the buyer can pay the deposit. After seller delivery, the order is not completed until the buyer pays the remaining balance. If the service was already fully paid, delivery confirmation can complete the order.
 
 For disputes:
 
@@ -82,7 +86,7 @@ Delivered -> Disputed -> Refunded
 Delivered -> Disputed -> Completed
 ```
 
-`Paid` means the backend has completed the Pi payment and the order is held in app state until delivery is confirmed or an admin resolves a dispute.
+`Deposit Paid` means the backend completed the deposit payment. `Completed` means the full service price has been paid through completed backend payments.
 
 ## User model
 
@@ -143,6 +147,7 @@ POST /api/users/:userId/seller-status
 
 GET  /api/orders
 POST /api/orders
+POST /api/orders/:orderId/accept
 POST /api/orders/:orderId/start
 POST /api/orders/:orderId/deliver
 POST /api/orders/:orderId/confirm
@@ -267,7 +272,7 @@ Backend smoke test:
 npm run test:backend
 ```
 
-The smoke test uses mock Pi payments and verifies the API-driven flow: reject external contact text, create service, approve listing, verify seller, create order with request metadata, approve/complete payment, start work, deliver, confirm, review, report, resolve report, refund a disputed order, and reload persisted order state.
+The smoke test uses mock Pi payments and verifies the API-driven flow: reject external contact text, create service, approve listing, verify seller, create order with request metadata, require seller acceptance before deposit, approve/complete deposit payment, start work, deliver, reject completion while a balance is due, approve/complete remaining balance payment, review, report, resolve report, refund a disputed order, and reload persisted order state.
 
 ## Deployment notes
 

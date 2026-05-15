@@ -25,7 +25,7 @@ export function createMockPaymentDto({ paymentId, orderId, serviceId, amountPi, 
   return {
     identifier: paymentId,
     amount: amountPi,
-    memo: `PiDeal ${mode === 'full' ? 'full payment' : 'deposit'} for order ${orderId}`,
+    memo: `PiDeal ${getPaymentMemoMode(mode)} for order ${orderId}`,
     metadata: { orderId, serviceId, mode },
     direction: 'user_to_app',
     created_at: new Date().toISOString(),
@@ -42,7 +42,15 @@ export function createMockPaymentDto({ paymentId, orderId, serviceId, amountPi, 
 }
 
 export function normalizePaymentMode(mode) {
-  return mode === 'full' ? 'Full payment' : 'Deposit';
+  if (mode === 'full') return 'Full payment';
+  if (mode === 'balance') return 'Remaining balance';
+  return 'Deposit';
+}
+
+function getPaymentMemoMode(mode) {
+  if (mode === 'full') return 'full payment';
+  if (mode === 'balance') return 'remaining balance';
+  return 'deposit';
 }
 
 export function calculatePlatformFee(amountPi) {
@@ -97,6 +105,16 @@ export function serializeService(service) {
 export function serializeOrder(order) {
   if (!order) return null;
 
+  const completedPayments = Array.isArray(order.payments)
+    ? order.payments.filter((payment) => payment.status === 'completed')
+    : [];
+  const paidTotal = Number(
+    completedPayments.reduce((sum, payment) => sum + Number(payment.amountPi || 0), 0).toFixed(2),
+  );
+  const orderPrice = Number(order.service?.pricePi ?? order.amountPi ?? 0);
+  const remainingPi = Number(Math.max(orderPrice - paidTotal, 0).toFixed(2));
+  const latestCompletedPayment = completedPayments[0];
+
   return {
     id: order.id,
     orderId: order.id,
@@ -106,10 +124,11 @@ export function serializeOrder(order) {
     sellerId: order.sellerId,
     sellerName: order.sellerName,
     status: order.status,
-    paymentMode: order.paymentMode,
+    paymentMode: order.paymentMode || (latestCompletedPayment ? normalizePaymentMode(latestCompletedPayment.mode) : null),
     amountPi: order.amountPi,
-    paidPi: order.amountPi ?? 0,
-    platformFeePi: order.platformFeePi ?? 0,
+    paidPi: paidTotal,
+    remainingPi,
+    platformFeePi: order.platformFeePi ?? calculatePlatformFee(paidTotal) ?? 0,
     paidAt: order.paidAt,
     buyerNote: order.buyerNote || '',
     requestSourceText: order.requestSourceText || '',

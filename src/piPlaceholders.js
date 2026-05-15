@@ -11,7 +11,7 @@
   Important payment note:
   Official Pi payments require server-side approval and server-side completion.
   PiDeal routes those callbacks through the backend, and the frontend only treats
-  an order as paid after the backend completion endpoint returns Paid.
+  an order as paid only after the backend completion endpoint advances escrow state.
 */
 
 const PI_SDK_SCRIPT_SRC = 'https://sdk.minepi.com/pi-sdk.js';
@@ -262,7 +262,7 @@ export async function createPiDepositPayment({
     pi.createPayment(
       {
         amount: amountPi,
-        memo: `PiDeal ${mode === 'full' ? 'full payment' : 'deposit'} for order ${orderId}`,
+        memo: `PiDeal ${getPaymentMemoMode(mode)} for order ${orderId}`,
         metadata: {
           orderId,
           serviceId,
@@ -330,6 +330,12 @@ export async function createPiDepositPayment({
       },
     );
   });
+}
+
+function getPaymentMemoMode(mode) {
+  if (mode === 'full') return 'full payment';
+  if (mode === 'balance') return 'remaining balance';
+  return 'deposit';
 }
 
 export async function approvePiPayment({
