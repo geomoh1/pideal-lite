@@ -1,8 +1,8 @@
 /*
   Official Pi SDK integration layer for PiDeal Lite.
 
-  The Pi SDK is loaded from the official script only when SDK testing is
-  explicitly enabled:
+  The Pi SDK is loaded from the official script in index.html, and this
+  module can also load it dynamically for local one-off SDK tests:
   https://sdk.minepi.com/pi-sdk.js
 
   Keep every direct Pi SDK call in this file. React components should import
@@ -35,8 +35,9 @@ function isLocalDevelopmentHost() {
 
 function isPiSdkAllowedRuntime() {
   if (typeof window === 'undefined') return false;
-  if (isLocalDevelopmentHost()) return false;
+  if (isLocalDevelopmentHost()) return window.location.search.includes('pi_sdk=1');
   if (import.meta.env.VITE_ENABLE_PI_SDK === 'true') return true;
+  if (window.Pi?.authenticate) return true;
   return window.location.search.includes('pi_sdk=1');
 }
 
@@ -192,7 +193,8 @@ export function getPiIntegrationStatus() {
 
 export function shouldAutoAuthenticateWithPi() {
   if (typeof window === 'undefined') return false;
-  return import.meta.env.VITE_ENABLE_PI_SDK === 'true' && !isLocalDevelopmentHost();
+  if (isLocalDevelopmentHost()) return false;
+  return import.meta.env.VITE_ENABLE_PI_SDK === 'true' || Boolean(window.Pi?.authenticate);
 }
 
 export async function authenticateWithPi() {

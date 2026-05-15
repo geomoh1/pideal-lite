@@ -114,7 +114,7 @@ Current demo mode records file metadata only. It does not upload or store binary
 
 ## Pi SDK integration
 
-PiDeal loads the official Pi JavaScript SDK dynamically from `src/piPlaceholders.js` only when SDK testing is explicitly enabled:
+PiDeal loads the official Pi JavaScript SDK from `index.html` so Pi App Studio can detect `Pi.authenticate(...)`. `src/piPlaceholders.js` still owns every direct Pi SDK call and can dynamically load the script for one-off local SDK tests.
 
 ```text
 https://sdk.minepi.com/pi-sdk.js
@@ -202,7 +202,7 @@ Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API ke
 
 `VITE_API_BASE_URL` controls where the React app sends `/api` calls. Leave it empty in local development so Vite can proxy `/api` to `http://127.0.0.1:4000`. Set it to the deployed backend HTTPS URL before building for Vercel or Netlify, for example `https://your-pideal-backend.onrender.com`.
 
-`VITE_ENABLE_PI_SDK=false` keeps deployed demo testing from trying real Pi SDK auth before Pi App Studio is ready. Set `VITE_ENABLE_PI_SDK=true` only after the Pi App Studio domain/setup is ready, or use `?pi_sdk=1` for an intentional one-off SDK test.
+`VITE_ENABLE_PI_SDK=false` keeps local development from forcing Pi SDK auth. In deployed builds, if the official SDK is present, the app can auto-trigger Pi authentication for Pi App Studio verification. Setting `VITE_ENABLE_PI_SDK=true` still forces SDK auth explicitly, and `?pi_sdk=1` can be used for an intentional one-off local SDK test.
 
 Database setup:
 
