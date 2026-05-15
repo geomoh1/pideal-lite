@@ -30,6 +30,7 @@ import {
   confirmPiDeliveryPayment,
   createPiDepositPayment,
   getPiIntegrationStatus,
+  shouldAutoAuthenticateWithPi,
 } from './piPlaceholders.js';
 import {
   acceptOrder as acceptOrderApi,
@@ -163,6 +164,7 @@ function App() {
   const [flowNotice, setFlowNotice] = useState('');
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
   const [marketplaceError, setMarketplaceError] = useState('');
+  const [autoAuthAttempted, setAutoAuthAttempted] = useState(false);
   const piIntegrationStatus = getPiIntegrationStatus();
   const appDirection = isRtlLanguage(language) ? 'rtl' : 'ltr';
 
@@ -278,7 +280,10 @@ function App() {
     const sessionUser = await syncUserSession(authenticatedUser);
     return {
       ...authenticatedUser,
+      uid: sessionUser.uid,
+      username: sessionUser.username,
       appRole: sessionUser.role,
+      sellerStatus: sessionUser.sellerStatus,
     };
   }
 
@@ -306,6 +311,13 @@ function App() {
   async function handlePiLogin() {
     await getAuthenticatedPiUser();
   }
+
+  useEffect(() => {
+    if (autoAuthAttempted || user || !shouldAutoAuthenticateWithPi()) return;
+
+    setAutoAuthAttempted(true);
+    getAuthenticatedPiUser();
+  }, [autoAuthAttempted, user]);
 
   async function handleDemoUser(demoUser) {
     const demoSession = {
@@ -928,7 +940,7 @@ function PiAccessStrip({ user, selectedMode, piIntegrationStatus, onLogin, onDem
       </div>
       <button className="primary-button compact" onClick={onLogin}>
         {user ? <BadgeCheck size={17} /> : <LogIn size={17} />}
-        {user ? 'Connected' : 'Pi Login'}
+        {user ? 'Connected' : 'Sign in with Pi'}
       </button>
     </section>
     </Localized>

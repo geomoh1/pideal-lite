@@ -3,7 +3,7 @@ import express from 'express';
 
 import { allowLocalDevCors } from './middleware/cors.js';
 import { prisma, ensureUser, shutdown } from './utils/db.js';
-import { callPiPlatform } from './utils/piClient.js';
+import { callPiPlatform, verifyPiAccessToken } from './utils/piClient.js';
 import {
   normalizePaymentRequest,
   createMockPaymentDto,
@@ -28,6 +28,7 @@ const DEMO_ADMIN_IDS = (process.env.DEMO_ADMIN_IDS || 'admin-lina')
   .split(',')
   .map((id) => id.trim())
   .filter(Boolean);
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 const ORDER_STATUS = {
   REQUESTED: 'Requested',
@@ -82,10 +83,12 @@ app.get('/api/health', async (request, response, next) => {
 
 app.post('/api/session', async (request, response, next) => {
   try {
-    const uid = requiredString(request.body?.uid, 'uid');
-    const username = requiredString(request.body?.username, 'username');
-    const role = getSessionRole(uid, request.body || {});
-    const user = await ensureUser(uid, username, role);
+    const accessToken = String(request.body?.accessToken || '').trim();
+    const sessionIdentity = accessToken
+      ? await verifyPiAccessToken(accessToken)
+      : getDemoSessionIdentity(request.body || {});
+    const role = getSessionRole(sessionIdentity.uid, request.body || {});
+    const user = await ensureUser(sessionIdentity.uid, sessionIdentity.username, role);
 
     return response.json({
       ok: true,
@@ -542,7 +545,7 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
 
     const serverPaymentRequest = resolveServerPaymentRequest(orderForPayment, paymentRequest);
 
-    const useMockPayment = USE_MOCK_PAYMENTS || paymentRequest.demoMode;
+    const useMockPayment = USE_MOCK_PAYMENTS || (!IS_PRODUCTION && paymentRequest.demoMode);
 
     const piPayment = useMockPayment
       ? createMockPaymentDto({ ...serverPaymentRequest, phase: 'approved' })
@@ -929,11 +932,24 @@ function serializeUser(user) {
 function getSessionRole(uid, body) {
   const isDemoAdmin = body.demoMode === true && DEMO_ADMIN_IDS.includes(uid);
 
-  if (USE_MOCK_PAYMENTS && isDemoAdmin) {
+  if (!IS_PRODUCTION && USE_MOCK_PAYMENTS && isDemoAdmin) {
     return 'admin';
   }
 
   return 'user';
+}
+
+function getDemoSessionIdentity(body) {
+  if (IS_PRODUCTION || !USE_MOCK_PAYMENTS || body.demoMode !== true) {
+    const error = new Error('A verified Pi access token is required.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  return {
+    uid: requiredString(body.uid, 'uid'),
+    username: requiredString(body.username, 'username'),
+  };
 }
 
 async function refreshServiceRating(serviceId) {

@@ -17,13 +17,12 @@
 const PI_SDK_SCRIPT_SRC = 'https://sdk.minepi.com/pi-sdk.js';
 let piSdkInitialized = false;
 let piSdkLoadPromise = null;
+let piSdkInitPromise = null;
 
 function getPiSdk() {
   if (!isPiSdkAllowedRuntime()) {
     return null;
   }
-
-  initializePiSdkIfEnabled();
 
   return typeof window !== 'undefined' && window.Pi ? window.Pi : null;
 }
@@ -52,12 +51,17 @@ function isPiSdkAvailable() {
   return Boolean(pi?.authenticate && pi?.createPayment);
 }
 
-function initializePiSdkIfEnabled() {
+async function initializePiSdkIfEnabled() {
   if (piSdkInitialized || typeof window === 'undefined') return;
   if (!window.Pi?.init) return;
+  if (piSdkInitPromise) return piSdkInitPromise;
 
-  window.Pi.init({ version: '2.0' });
-  piSdkInitialized = true;
+  piSdkInitPromise = (async () => {
+    await window.Pi.init({ version: '2.0' });
+    piSdkInitialized = true;
+  })();
+
+  return piSdkInitPromise;
 }
 
 async function ensurePiSdkReady() {
@@ -68,7 +72,7 @@ async function ensurePiSdkReady() {
     await loadPiSdkScript();
   }
 
-  initializePiSdkIfEnabled();
+  await initializePiSdkIfEnabled();
   return window.Pi || null;
 }
 
@@ -186,10 +190,19 @@ export function getPiIntegrationStatus() {
   };
 }
 
+export function shouldAutoAuthenticateWithPi() {
+  if (typeof window === 'undefined') return false;
+  return import.meta.env.VITE_ENABLE_PI_SDK === 'true' && !isLocalDevelopmentHost();
+}
+
 export async function authenticateWithPi() {
   const pi = await ensurePiSdkReady();
 
   if (!pi?.authenticate) {
+    if (isPiSdkAllowedRuntime()) {
+      throw new Error('Official Pi SDK authentication is not available in this browser.');
+    }
+
     return {
       uid: 'pi-user-placeholder',
       username: 'pioneer.demo',
@@ -200,7 +213,7 @@ export async function authenticateWithPi() {
     };
   }
 
-  const scopes = ['username', 'payments'];
+  const scopes = ['username'];
 
   function onIncompletePaymentFound(payment) {
     console.warn('Incomplete Pi payment found', payment);

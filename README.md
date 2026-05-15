@@ -128,9 +128,9 @@ All Pi auth and payment logic is isolated in `src/piPlaceholders.js`:
 - `completePiPayment`
 - `confirmPiDeliveryPayment`
 
-The frontend uses the official SDK calls `Pi.authenticate(...)` and `Pi.createPayment(...)` when the SDK is available. Outside Pi Browser, the app uses local fallback responses so the MVP can still be tested during development.
+The frontend uses the official SDK calls `Pi.authenticate(...)` and `Pi.createPayment(...)` when the SDK is available. Authentication requests only the `username` scope. After Pi authentication succeeds, the frontend sends only the Pi `accessToken` to `POST /api/session`; the backend verifies it with `GET https://api.minepi.com/v2/me` using `Authorization: Bearer <accessToken>` and creates/finds the local `User` from the verified Pi `uid`.
 
-Important: official Pi payments require server-side approval and server-side completion before an order should be treated as truly paid. PiDeal Lite now routes approval and completion callbacks through the backend endpoints below. The React frontend only marks an order as `Paid` after the backend completion endpoint returns `order.status = "Paid"`.
+Important: official Pi payments require server-side approval and server-side completion before an order should be treated as truly paid. PiDeal Lite now routes approval and completion callbacks through the backend endpoints below. The React frontend only advances escrow state after the backend completion endpoint returns the updated order.
 
 ## Backend API
 
@@ -157,6 +157,8 @@ POST /api/orders/:orderId/dispute
 POST /api/orders/:orderId/refund
 POST /api/orders/:orderId/release
 GET  /api/orders/:orderId/status
+
+POST /api/session
 
 GET  /api/reports
 POST /api/reports
@@ -265,7 +267,7 @@ To make a real Pi user an admin after their first login creates a `User` row, up
 UPDATE User SET role = 'admin' WHERE id = '<real-pi-user-uid>';
 ```
 
-For SQLite local testing, you can run the same SQL against `prisma/dev.db` with your preferred SQLite tool. In production, do this in the managed database/admin console. This MVP guard still needs official Pi access-token verification before a public launch; the role must ultimately be tied to a verified Pi identity, not a browser-controlled value.
+For SQLite local testing, you can run the same SQL against `prisma/dev.db` with your preferred SQLite tool. In production, do this in the managed database/admin console. Real Pi sessions now verify the Pi access token before creating/finding the user. The temporary `X-PiDeal-User-Id` admin header is still an MVP fallback for moderation calls and should be replaced with a backend-issued session token before a public launch.
 
 Backend smoke test:
 

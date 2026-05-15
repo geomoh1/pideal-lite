@@ -31,6 +31,7 @@ const ar = {
   'Demo Admin': 'تجربة الأدمن',
   Connected: 'متصل',
   'Pi Login': 'دخول Pi',
+  'Sign in with Pi': 'تسجيل الدخول بـ Pi',
   Login: 'دخول',
   Home: 'الرئيسية',
   Sell: 'بيع',

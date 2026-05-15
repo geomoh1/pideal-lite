@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { PrismaClient } from '@prisma/client';
 
 const baseUrl = 'http://127.0.0.1:4000';
+const piApiBaseUrl = 'http://127.0.0.1:4010/v2';
 const startedAt = Date.now();
 const depositPaymentId = `smoke-payment-${startedAt}-deposit`;
 const balancePaymentId = `smoke-payment-${startedAt}-balance`;
@@ -9,14 +11,20 @@ const serviceId = `smoke-service-${startedAt}`;
 const depositTxid = `smoke-tx-${startedAt}-deposit`;
 const balanceTxid = `smoke-tx-${startedAt}-balance`;
 const prisma = new PrismaClient();
+const piApiServer = createPiApiMockServer();
+
+await new Promise((resolve) => {
+  piApiServer.listen(4010, '127.0.0.1', resolve);
+});
 
 const server = spawn(process.execPath, ['server/index.js'], {
   cwd: process.cwd(),
   env: {
     ...process.env,
     PORT: '4000',
-    NODE_ENV: 'production',
+    NODE_ENV: 'test',
     PI_API_KEY: '',
+    PI_API_BASE_URL: piApiBaseUrl,
     PI_USE_MOCK_PAYMENTS: 'false',
     PLATFORM_FEE_RATE: '0.03',
     DATABASE_URL: process.env.DATABASE_URL || 'file:./dev.db',
@@ -49,9 +57,38 @@ try {
       role: 'admin',
     },
   });
+  await prisma.user.upsert({
+    where: { id: 'verified-admin' },
+    update: {
+      username: 'verified.admin',
+      role: 'admin',
+    },
+    create: {
+      id: 'verified-admin',
+      username: 'verified.admin',
+      role: 'admin',
+    },
+  });
 
   const health = await waitForHealth();
   assertEqual(health.platformFeePercent, '3%', 'Backend must read PLATFORM_FEE_RATE from the environment.');
+  const verifiedSession = await postJson('/api/session', {
+    accessToken: 'valid-user-token',
+  });
+  assertEqual(verifiedSession.user.uid, 'verified-user', 'Valid Pi access token must create a verified user session.');
+  assertEqual(verifiedSession.user.role, 'user', 'New verified Pi users must default to role user.');
+
+  const invalidSession = await postJsonExpectFailure('/api/session', {
+    accessToken: 'invalid-token',
+  });
+  assertEqual(invalidSession.status, 401, 'Invalid Pi access token must be rejected.');
+
+  const verifiedAdminSession = await postJson('/api/session', {
+    accessToken: 'valid-admin-token',
+  });
+  assertEqual(verifiedAdminSession.user.uid, 'verified-admin', 'Admin auth must use the verified Pi uid.');
+  assertEqual(verifiedAdminSession.user.role, 'admin', 'Existing admin role must be preserved after Pi auth.');
+
   const demoAdminSession = await postJson('/api/session', {
     uid: 'admin-lina',
     username: 'lina.admin',
@@ -296,8 +333,40 @@ try {
   }, null, 2));
 } finally {
   await stopServer();
+  await stopPiApiServer();
   await cleanupSmokeData();
   await prisma.$disconnect();
+}
+
+function createPiApiMockServer() {
+  return createServer((request, response) => {
+    const url = new URL(request.url, piApiBaseUrl);
+    const authHeader = request.headers.authorization || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+
+    response.setHeader('Content-Type', 'application/json');
+
+    if (request.method !== 'GET' || url.pathname !== '/v2/me') {
+      response.writeHead(404);
+      response.end(JSON.stringify({ error: 'not_found' }));
+      return;
+    }
+
+    if (token === 'valid-user-token') {
+      response.writeHead(200);
+      response.end(JSON.stringify({ uid: 'verified-user', username: 'verified.pi' }));
+      return;
+    }
+
+    if (token === 'valid-admin-token') {
+      response.writeHead(200);
+      response.end(JSON.stringify({ uid: 'verified-admin', username: 'verified.admin' }));
+      return;
+    }
+
+    response.writeHead(401);
+    response.end(JSON.stringify({ error: 'invalid_token' }));
+  });
 }
 
 async function waitForHealth() {
@@ -413,6 +482,14 @@ async function stopServer() {
   }
 }
 
+async function stopPiApiServer() {
+  if (!piApiServer.listening) return;
+
+  await new Promise((resolve) => {
+    piApiServer.close(resolve);
+  });
+}
+
 async function cleanupSmokeData() {
   const smokeServiceFilter = { startsWith: 'smoke-service-' };
 
@@ -454,6 +531,6 @@ async function cleanupSmokeData() {
     where: { id: smokeServiceFilter },
   });
   await prisma.user.deleteMany({
-    where: { id: { in: ['smoke-buyer', 'smoke-seller'] } },
+    where: { id: { in: ['smoke-buyer', 'smoke-seller', 'verified-user', 'verified-admin'] } },
   });
 }
