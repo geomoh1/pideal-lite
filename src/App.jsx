@@ -744,11 +744,7 @@ function App() {
         <div className="app-shell" lang={language} dir={appDirection}>
       <header className="top-bar">
         <button className="brand-button" onClick={() => setActiveView('home')} aria-label="PiDeal home">
-          <span className="brand-mark">Pi</span>
-          <span>
-            <strong>PiDeal</strong>
-            <small>Buy and sell digital services with Pi.</small>
-          </span>
+          <img className="brand-logo" src="/pideal-logo.svg" alt="" />
         </button>
         <div className="top-actions">
           <LanguageSwitch language={language} onLanguageChange={setLanguage} />
