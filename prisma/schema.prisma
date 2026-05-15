@@ -11,6 +11,7 @@ model User {
   id              String    @id
   username        String
   role            String    @default("user")
+  sellerStatus    String    @default("unverified")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   services        Service[]
@@ -38,6 +39,11 @@ model Service {
   icon             String?
   featured         Boolean  @default(false)
   terms            String?
+  portfolioUrl     String?
+  proofLink        String?
+  experience       String?
+  revisionPolicy   String?
+  requirementsFromBuyer String?
   deliverablesJson String?
   seller           User     @relation(fields: [sellerId], references: [id])
   orders           Order[]

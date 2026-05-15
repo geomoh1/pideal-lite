@@ -14,28 +14,28 @@ PiDeal Lite is a mobile-first React marketplace for Pi Browser where Pi Network 
 - SQLite persistence through Prisma for users, services, orders, payments, reviews, and reports
 - API-driven frontend state for services, orders, delivery, reviews, and reports
 - Loading and error states for backend API calls
-- Buyer and seller orders dashboard
+- Buying and selling order tabs for the same user account
 - Seller delivery message/link placeholder
 - Delivery confirmation
 - Seller rating
-- Profile page with role switcher and simple stats
+- Profile page with mode switcher and simple stats
 - Simple admin moderation for services, orders, and reports
 
 ## MVP flows
 
-Buyer:
+Browse mode:
 
 ```text
 Open App -> Pi Login -> Browse -> Service Details -> Add brief/materials -> Order -> Pi Payment -> Delivery -> Confirm -> Rating
 ```
 
-Seller:
+Sell mode:
 
 ```text
 Login -> Add Service -> Pending Review -> Approved -> Receive Order materials -> Deliver message/link/file -> Buyer Confirms -> Rating
 ```
 
-Admin:
+Admin mode:
 
 ```text
 Admin placeholder -> Review Services -> Approve/Reject -> Monitor Orders -> Resolve Reports
@@ -49,11 +49,49 @@ Admin placeholder -> Review Services -> Approve/Reject -> Monitor Orders -> Reso
 - Delivered
 - Completed
 - Disputed
+- Refunded
 - Cancelled
 
 ## Business model placeholder
 
 The MVP shows a simple `5%` platform commission on successful paid orders.
+
+## Trust and escrow
+
+PiDeal uses a lightweight trust model for the MVP:
+
+- Every new service starts as `pending`.
+- Admin reviews each listing before it can appear in Browse.
+- Service listings capture experience, portfolio/proof links, revision policy, and requirements from the buyer.
+- The backend rejects obvious external contact methods in listing text.
+- Sellers have `sellerStatus`: `unverified`, `verified`, or `blocked`.
+- Buyers can report services and dispute delivered orders.
+- Admin can verify or block sellers, remove services, resolve reports, refund disputed orders, or release disputed orders to the seller.
+
+Payments use logical escrow state, not internal wallets or balances:
+
+```text
+Pending Payment -> Paid -> In Progress -> Delivered -> Completed
+```
+
+For disputes:
+
+```text
+Delivered -> Disputed -> Refunded
+Delivered -> Disputed -> Completed
+```
+
+`Paid` means the backend has completed the Pi payment and the order is held in app state until delivery is confirmed or an admin resolves a dispute.
+
+## User model
+
+PiDeal uses one normal user account for both buying and selling:
+
+```text
+User.role = user | admin
+```
+
+`user` accounts can browse, buy services from others, add services, and deliver work. `admin` is only an extra moderation permission. Buyer and seller are order/service relationships, not account roles. The app blocks users from ordering their own service.
 
 ## Buyer materials and seller delivery
 
@@ -100,6 +138,7 @@ GET  /api/services
 POST /api/services
 POST /api/services/:serviceId/status
 POST /api/services/:serviceId/remove
+POST /api/users/:userId/seller-status
 
 GET  /api/orders
 POST /api/orders
@@ -109,6 +148,8 @@ POST /api/orders/:orderId/confirm
 POST /api/orders/:orderId/review
 POST /api/orders/:orderId/cancel
 POST /api/orders/:orderId/dispute
+POST /api/orders/:orderId/refund
+POST /api/orders/:orderId/release
 GET  /api/orders/:orderId/status
 
 GET  /api/reports
@@ -181,20 +222,20 @@ Demo buttons are shown until real `Pi.authenticate(...)` succeeds. After a real 
 
 Demo mode does not require Pi Browser or Pi App Studio. It sends `demoMode=true` to the payment backend so demo payments use mock approval and mock completion while still preserving the backend rule that an order only becomes `Paid` after completion.
 
-- Buyer: `ali.pi` (`buyer-ali`)
-- Seller: `pioneer.demo` (`pi-user-placeholder`)
+- Browse demo: `ali.pi` (`buyer-ali`)
+- Sell demo: `pioneer.demo` (`pi-user-placeholder`)
 - Admin: `lina.admin` (`admin-lina`)
 
 The Prisma seed also creates additional marketplace test users:
 
-- Sellers: `maha.pi`, `pixelcare`, `faris.lang`, `devdesk`
-- Buyers: `nora.pi`, `sami.pi`
+- Users with listed services: `maha.pi`, `pixelcare`, `faris.lang`, `devdesk`
+- Users with sample orders: `nora.pi`, `sami.pi`
 
 Seed data includes approved services, one pending listing, orders across the main statuses, completed mock payments, one review, and one admin report.
 
 ## Admin access
 
-Admin moderation is controlled by the backend database, not by the role switcher in the React UI.
+Admin moderation is controlled by the backend database, not by the mode switcher in the React UI.
 
 - The seeded demo admin is `lina.admin` with user id `admin-lina`.
 - In mock/demo mode, `DEMO_ADMIN_IDS=admin-lina` also allows the deployed demo backend to recognize Demo Admin even if the database was not seeded first.
@@ -216,7 +257,7 @@ Backend smoke test:
 npm run test:backend
 ```
 
-The smoke test uses mock Pi payments and verifies the API-driven flow: create service, approve listing, create order with request metadata, approve/complete payment, start work, deliver, confirm, review, report, resolve report, and reload persisted order state.
+The smoke test uses mock Pi payments and verifies the API-driven flow: reject external contact text, create service, approve listing, verify seller, create order with request metadata, approve/complete payment, start work, deliver, confirm, review, report, resolve report, refund a disputed order, and reload persisted order state.
 
 ## Deployment notes
 
@@ -228,7 +269,7 @@ Frontend on Vercel or Netlify:
 - Environment variable for demo testing: `VITE_ENABLE_PI_SDK=false`
 - Rebuild the frontend after changing `VITE_API_BASE_URL`; Vite embeds this value at build time.
 - The frontend is a single-page app. Pi auth and payment calls still stay isolated in `src/piPlaceholders.js`.
-- Before Pi App Studio submission, open the deployed frontend in a normal mobile browser and confirm Demo Buyer, Demo Seller, and Demo Admin can complete their flows without Pi Browser.
+- Before Pi App Studio submission, open the deployed frontend in a normal mobile browser and confirm Demo Browse, Demo Sell, and Demo Admin can complete their flows without Pi Browser.
 - The deployed frontend must reach the backend API over HTTPS for services, orders, reports, and Pi payment callbacks.
 - If the deployed console shows `/api/services`, `/api/orders`, or `/api/reports` returning 404 from the Vercel domain, `VITE_API_BASE_URL` is missing or the frontend was not rebuilt after setting it.
 
@@ -260,7 +301,7 @@ SQLite production limitation:
 - Confirm `VITE_API_BASE_URL` points to the deployed backend outside local development.
 - Confirm backend CORS allows the production frontend domain and Vercel preview domains.
 - Confirm services, orders, delivery, reviews, and reports load from the backend after a page refresh.
-- Confirm the deployed app shows Demo Buyer, Demo Seller, and Demo Admin before real Pi auth succeeds.
+- Confirm the deployed app shows Demo Browse, Demo Sell, and Demo Admin before real Pi auth succeeds.
 - Confirm demo payments stay in mock mode on the deployed backend.
 - Confirm demo buttons disappear after a real Pi SDK authentication succeeds.
 - Confirm the Pi App Studio app domain matches the deployed frontend domain before expecting production Pi SDK auth to work.

@@ -34,6 +34,7 @@ const ORDER_STATUS = {
   DELIVERED: 'Delivered',
   COMPLETED: 'Completed',
   DISPUTED: 'Disputed',
+  REFUNDED: 'Refunded',
   CANCELLED: 'Cancelled',
 };
 
@@ -77,11 +78,7 @@ app.post('/api/session', async (request, response, next) => {
     const uid = requiredString(request.body?.uid, 'uid');
     const username = requiredString(request.body?.username, 'username');
     const role = getSessionRole(uid, request.body || {});
-    const user = await prisma.user.upsert({
-      where: { id: uid },
-      create: { id: uid, username, role },
-      update: role === 'admin' ? { username, role } : { username },
-    });
+    const user = await ensureUser(uid, username, role);
 
     return response.json({
       ok: true,
@@ -109,7 +106,11 @@ app.get('/api/services', async (request, response, next) => {
 app.post('/api/services', async (request, response, next) => {
   try {
     const listing = normalizeServiceInput(request.body || {});
-    const seller = await ensureUser(listing.sellerId, listing.sellerName, 'seller');
+    const seller = await ensureUser(listing.sellerId, listing.sellerName, 'user');
+
+    if (seller.sellerStatus === 'blocked') {
+      return response.status(403).json({ ok: false, error: 'This seller is blocked from publishing services.' });
+    }
 
     const service = await prisma.service.create({
       data: {
@@ -129,6 +130,11 @@ app.post('/api/services', async (request, response, next) => {
         featured: false,
         summary: listing.summary,
         terms: listing.terms,
+        portfolioUrl: listing.portfolioUrl,
+        proofLink: listing.proofLink,
+        experience: listing.experience,
+        revisionPolicy: listing.revisionPolicy,
+        requirementsFromBuyer: listing.requirementsFromBuyer,
         deliverablesJson: stringifyJson(listing.deliverables),
       },
       include: SERVICE_INCLUDE,
@@ -173,6 +179,24 @@ app.post('/api/services/:serviceId/remove', requireAdmin, async (request, respon
   }
 });
 
+app.post('/api/users/:userId/seller-status', requireAdmin, async (request, response, next) => {
+  try {
+    const sellerStatus = String(request.body?.sellerStatus || '').trim();
+    if (!['unverified', 'verified', 'blocked'].includes(sellerStatus)) {
+      return response.status(400).json({ ok: false, error: 'Unsupported seller status.' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: request.params.userId },
+      data: { sellerStatus },
+    });
+
+    return response.json({ ok: true, user: serializeUser(user) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.get('/api/orders', async (request, response, next) => {
   try {
     const orders = await prisma.order.findMany({
@@ -197,8 +221,11 @@ app.post('/api/orders', async (request, response, next) => {
     if (!service || service.status !== 'approved') {
       return response.status(404).json({ ok: false, error: 'Approved service was not found.' });
     }
+    if (service.seller?.sellerStatus === 'blocked') {
+      return response.status(403).json({ ok: false, error: 'This seller is currently blocked.' });
+    }
 
-    const buyer = await ensureUser(orderInput.buyerId, orderInput.buyerName, 'buyer');
+    const buyer = await ensureUser(orderInput.buyerId, orderInput.buyerName, 'user');
 
     const order = await prisma.order.create({
       data: {
@@ -368,6 +395,50 @@ app.post('/api/orders/:orderId/dispute', async (request, response, next) => {
   }
 });
 
+app.post('/api/orders/:orderId/refund', requireAdmin, async (request, response, next) => {
+  try {
+    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
+    if (!order) {
+      return response.status(404).json({ ok: false, error: 'Order was not found.' });
+    }
+    if (order.status !== ORDER_STATUS.DISPUTED) {
+      return response.status(409).json({ ok: false, error: 'Only disputed orders can be refunded by admin.' });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: request.params.orderId },
+      data: { status: ORDER_STATUS.REFUNDED },
+      include: ORDER_INCLUDE,
+    });
+
+    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/orders/:orderId/release', requireAdmin, async (request, response, next) => {
+  try {
+    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
+    if (!order) {
+      return response.status(404).json({ ok: false, error: 'Order was not found.' });
+    }
+    if (order.status !== ORDER_STATUS.DISPUTED) {
+      return response.status(409).json({ ok: false, error: 'Only disputed orders can be released by admin.' });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: request.params.orderId },
+      data: { status: ORDER_STATUS.COMPLETED },
+      include: ORDER_INCLUDE,
+    });
+
+    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.get('/api/reports', async (request, response, next) => {
   try {
     const reports = await prisma.report.findMany({
@@ -389,7 +460,7 @@ app.post('/api/reports', async (request, response, next) => {
 
     const reporterId = request.body?.reporterId || null;
     if (reporterId) {
-      await ensureUser(reporterId, request.body?.reporterName || 'Pi reporter', 'buyer');
+      await ensureUser(reporterId, request.body?.reporterName || 'Pi reporter', 'user');
     }
 
     const report = await prisma.report.create({
@@ -435,12 +506,12 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
     const buyer = await ensureUser(
       paymentRequest.buyerId || `buyer-${paymentRequest.orderId}`,
       paymentRequest.buyerName || 'Pi buyer',
-      'buyer',
+      'user',
     );
     const seller = await ensureUser(
       paymentRequest.sellerId || `seller-${paymentRequest.serviceId || paymentRequest.orderId}`,
       paymentRequest.sellerName || 'Pi seller',
-      'seller',
+      'user',
     );
 
     await ensureServiceSnapshot({
@@ -648,6 +719,22 @@ function normalizeServiceInput(body) {
   const category = requiredString(body.category, 'category');
   const sellerId = requiredString(body.sellerId, 'sellerId');
   const sellerName = requiredString(body.sellerName, 'sellerName');
+  const portfolioUrl = optionalUrl(body.portfolioUrl, 'portfolioUrl');
+  const proofLink = optionalUrl(body.proofLink, 'proofLink');
+  const experience = optionalString(body.experience);
+  const revisionPolicy = requiredString(body.revisionPolicy, 'revisionPolicy');
+  const requirementsFromBuyer = requiredString(body.requirementsFromBuyer, 'requirementsFromBuyer');
+
+  assertNoExternalContact({
+    title,
+    summary,
+    terms,
+    experience,
+    revisionPolicy,
+    requirementsFromBuyer,
+  });
+  assertSafePortfolioUrl(portfolioUrl, 'portfolioUrl');
+  assertSafePortfolioUrl(proofLink, 'proofLink');
 
   return {
     id: body.id || createId('service'),
@@ -663,6 +750,11 @@ function normalizeServiceInput(body) {
     icon: String(body.icon || category.slice(0, 2)).toUpperCase().slice(0, 3),
     summary,
     terms,
+    portfolioUrl,
+    proofLink,
+    experience,
+    revisionPolicy,
+    requirementsFromBuyer,
     deliverables: Array.isArray(body.deliverables)
       ? body.deliverables
       : ['Digital delivery message or link', 'Buyer confirmation required', 'Pi payment placeholder'],
@@ -727,6 +819,7 @@ function serializeUser(user) {
     uid: user.id,
     username: user.username,
     role: user.role,
+    sellerStatus: user.sellerStatus,
   };
 }
 
@@ -784,6 +877,57 @@ function positiveInteger(value, fieldName) {
     badRequest(`${fieldName} must be a positive integer.`);
   }
   return number;
+}
+
+function optionalString(value) {
+  return String(value || '').trim();
+}
+
+function optionalUrl(value, fieldName) {
+  const text = optionalString(value);
+  if (!text) return '';
+
+  try {
+    const url = new URL(text);
+    if (!['https:', 'http:'].includes(url.protocol)) {
+      badRequest(`${fieldName} must be an http or https URL.`);
+    }
+    return url.toString();
+  } catch {
+    badRequest(`${fieldName} must be a valid URL.`);
+  }
+}
+
+function assertNoExternalContact(fields) {
+  const contactPattern =
+    /(@[\w.-]+\.\w{2,}|[\w.%+-]+@[\w.-]+\.[a-z]{2,}|(?:\+?\d[\d\s().-]{7,}\d)|\b(?:whatsapp|telegram|instagram|facebook|snapchat|tiktok|discord|wechat|line|signal|email|gmail|phone|mobile|call me|dm me|contact me)\b|(?:wa\.me|t\.me|telegram\.me|instagram\.com|facebook\.com|fb\.com|discord\.gg))/i;
+
+  for (const [fieldName, value] of Object.entries(fields)) {
+    if (contactPattern.test(String(value || ''))) {
+      badRequest(`${fieldName} cannot include external contact methods.`);
+    }
+  }
+}
+
+function assertSafePortfolioUrl(value, fieldName) {
+  if (!value) return;
+
+  const blockedDomains = [
+    'wa.me',
+    't.me',
+    'telegram.me',
+    'instagram.com',
+    'facebook.com',
+    'fb.com',
+    'discord.gg',
+    'snapchat.com',
+    'tiktok.com',
+  ];
+  const hostname = new URL(value).hostname.replace(/^www\./, '').toLowerCase();
+
+  if (blockedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`))) {
+    badRequest(`${fieldName} cannot point to external messaging or social profiles.`);
+  }
 }
 
 function badRequest(message) {

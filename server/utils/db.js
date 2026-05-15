@@ -2,11 +2,27 @@ import { PrismaClient } from '@prisma/client';
 
 export const prisma = new PrismaClient();
 
-export async function ensureUser(id, username, role) {
-  return prisma.user.upsert({
+export async function ensureUser(id, username, role = 'user') {
+  const normalizedRole = role === 'admin' ? 'admin' : 'user';
+  const existingUser = await prisma.user.findUnique({
     where: { id },
-    create: { id, username, role },
-    update: { username },
+  });
+
+  if (!existingUser) {
+    return prisma.user.create({
+      data: { id, username, role: normalizedRole },
+    });
+  }
+
+  const shouldUpdateRole =
+    normalizedRole === 'admin' || !['user', 'admin'].includes(existingUser.role);
+
+  return prisma.user.update({
+    where: { id },
+    data: {
+      username,
+      ...(shouldUpdateRole ? { role: normalizedRole } : {}),
+    },
   });
 }
 

@@ -1140,11 +1140,11 @@ textarea {
   background: #20272f;
 }
 
-.role-switch {
+.mode-switch {
   width: 100%;
 }
 
-.role-switch button {
+.mode-switch button {
   flex: 1 1 0;
 }
 

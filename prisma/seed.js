@@ -3,15 +3,15 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const users = [
-  { id: 'pi-user-placeholder', username: 'pioneer.demo', role: 'seller' },
-  { id: 'seller-maha', username: 'maha.pi', role: 'seller' },
-  { id: 'seller-pixel', username: 'pixelcare', role: 'seller' },
-  { id: 'seller-faris', username: 'faris.lang', role: 'seller' },
-  { id: 'seller-devdesk', username: 'devdesk', role: 'seller' },
-  { id: 'buyer-ali', username: 'ali.pi', role: 'buyer' },
-  { id: 'buyer-nora', username: 'nora.pi', role: 'buyer' },
-  { id: 'buyer-sami', username: 'sami.pi', role: 'buyer' },
-  { id: 'admin-lina', username: 'lina.admin', role: 'admin' },
+  { id: 'pi-user-placeholder', username: 'pioneer.demo', role: 'user', sellerStatus: 'verified' },
+  { id: 'seller-maha', username: 'maha.pi', role: 'user', sellerStatus: 'verified' },
+  { id: 'seller-pixel', username: 'pixelcare', role: 'user', sellerStatus: 'verified' },
+  { id: 'seller-faris', username: 'faris.lang', role: 'user', sellerStatus: 'verified' },
+  { id: 'seller-devdesk', username: 'devdesk', role: 'user', sellerStatus: 'unverified' },
+  { id: 'buyer-ali', username: 'ali.pi', role: 'user', sellerStatus: 'unverified' },
+  { id: 'buyer-nora', username: 'nora.pi', role: 'user', sellerStatus: 'unverified' },
+  { id: 'buyer-sami', username: 'sami.pi', role: 'user', sellerStatus: 'unverified' },
+  { id: 'admin-lina', username: 'lina.admin', role: 'admin', sellerStatus: 'verified' },
 ];
 
 const services = [
@@ -32,6 +32,11 @@ const services = [
     icon: 'LD',
     featured: true,
     terms: 'Buyer provides brand name, preferred colors, and one reference style.',
+    portfolioUrl: 'https://example.com/maha-logo-portfolio',
+    proofLink: 'https://example.com/maha-logo-samples',
+    experience: 'Designed lightweight brand systems for Pi community projects and small digital shops.',
+    revisionPolicy: 'Includes one revision round after the first concepts.',
+    requirementsFromBuyer: 'Brand name, preferred colors, target audience, and one reference style.',
     deliverablesJson: JSON.stringify(['2 logo concepts', '1 revision round', 'PNG and source file']),
   },
   {
@@ -51,6 +56,11 @@ const services = [
     icon: 'CV',
     featured: true,
     terms: 'Buyer sends current CV text and target role before work starts.',
+    portfolioUrl: 'https://example.com/pioneer-cv-samples',
+    proofLink: 'https://example.com/pioneer-writing-proof',
+    experience: 'Rewrites CVs for remote product, support, and operations roles.',
+    revisionPolicy: 'One wording adjustment after delivery.',
+    requirementsFromBuyer: 'Current CV text, target role, and any job links to tailor the wording.',
     deliverablesJson: JSON.stringify(['ATS-ready CV text', 'Profile summary', 'Role bullet cleanup']),
   },
   {
@@ -70,6 +80,11 @@ const services = [
     icon: 'TR',
     featured: false,
     terms: 'Up to 900 words per order. Legal and medical content is excluded.',
+    portfolioUrl: 'https://example.com/faris-translation-samples',
+    proofLink: 'https://example.com/faris-language-proof',
+    experience: 'Translates short app, profile, and community content between Arabic and English.',
+    revisionPolicy: 'One tone adjustment if the meaning changes.',
+    requirementsFromBuyer: 'Source text, target audience, and preferred formal or casual tone.',
     deliverablesJson: JSON.stringify(['Up to 900 words', 'Proofread text', 'Tone adjustment']),
   },
   {
@@ -89,6 +104,11 @@ const services = [
     icon: 'IP',
     featured: true,
     terms: 'Buyer provides original images and target size before work begins.',
+    portfolioUrl: 'https://example.com/pixelcare-before-after',
+    proofLink: 'https://example.com/pixelcare-image-proof',
+    experience: 'Cleans marketplace images for small catalogs and digital service listings.',
+    revisionPolicy: 'One correction pass for crop, brightness, or export size.',
+    requirementsFromBuyer: 'Original images, target sizes, and examples of the desired result.',
     deliverablesJson: JSON.stringify(['5 edited images', 'Square and story sizes', 'Color polish']),
   },
   {
@@ -108,6 +128,11 @@ const services = [
     icon: 'JS',
     featured: false,
     terms: 'One small component fix. Backend and database work are excluded.',
+    portfolioUrl: 'https://example.com/devdesk-react-notes',
+    proofLink: 'https://example.com/devdesk-code-proof',
+    experience: 'Fixes small React state, form, and layout issues.',
+    revisionPolicy: 'One follow-up adjustment if the same bug remains.',
+    requirementsFromBuyer: 'Bug description, affected component, reproduction steps, and expected behavior.',
     deliverablesJson: JSON.stringify(['Bug diagnosis', 'Patch notes', 'One small component fix']),
   },
 ];
@@ -236,6 +261,7 @@ async function main() {
       update: {
         username: user.username,
         role: user.role,
+        sellerStatus: user.sellerStatus,
       },
       create: user,
     });

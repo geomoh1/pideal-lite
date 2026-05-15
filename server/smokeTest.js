@@ -69,6 +69,11 @@ try {
     accent: '#f5b84b',
     summary: 'Smoke-test service for API-driven marketplace state.',
     terms: 'Buyer sends a short brief.',
+    portfolioUrl: 'https://example.com/smoke-portfolio',
+    proofLink: 'https://example.com/smoke-proof',
+    experience: 'Smoke seller has sample digital-service experience.',
+    revisionPolicy: 'One smoke-test revision is included.',
+    requirementsFromBuyer: 'Buyer sends a clear brief and reference style.',
     deliverables: ['Smoke delivery'],
   });
 
@@ -78,12 +83,37 @@ try {
   const rejectedModeration = await postJsonExpectFailure(`/api/services/${serviceId}/status`, { status: 'approved' });
   assertEqual(rejectedModeration.status, 401, 'Service moderation must require an admin actor.');
 
+  const rejectedContactListing = await postJsonExpectFailure('/api/services', {
+    id: `${serviceId}-contact`,
+    title: 'Unsafe contact listing',
+    category: 'Design',
+    sellerId: 'smoke-seller',
+    sellerName: 'smoke.seller',
+    pricePi: 10,
+    depositPi: 4,
+    deliveryDays: 1,
+    icon: 'UC',
+    accent: '#f5b84b',
+    summary: 'Message me on Telegram for details.',
+    terms: 'Buyer sends a short brief.',
+    revisionPolicy: 'One revision.',
+    requirementsFromBuyer: 'Brief and reference.',
+  });
+  assertEqual(rejectedContactListing.status, 400, 'Service listings must reject external contact methods.');
+
   const approvedService = await postJson(
     `/api/services/${serviceId}/status`,
     { status: 'approved' },
     { actorUserId: 'admin-lina' },
   );
   assertEqual(approvedService.service.status, 'approved', 'Service approval must persist.');
+
+  const verifiedSeller = await postJson(
+    '/api/users/smoke-seller/seller-status',
+    { sellerStatus: 'verified' },
+    { actorUserId: 'admin-lina' },
+  );
+  assertEqual(verifiedSeller.user.sellerStatus, 'verified', 'Admin must be able to verify a seller.');
 
   const services = await getJson('/api/services');
   assertTruthy(
@@ -119,6 +149,15 @@ try {
 
   assertEqual(approval.order.status, 'Pending Payment', 'Approval must not mark order as Paid.');
   assertEqual(approval.mock, true, 'Demo approval must stay in mock mode.');
+
+  const smokeUsers = await prisma.user.findMany({
+    where: { id: { in: ['smoke-buyer', 'smoke-seller'] } },
+    select: { id: true, role: true },
+  });
+  assertTruthy(
+    smokeUsers.every((user) => user.role === 'user'),
+    'Buying and selling test users must persist with role user.',
+  );
 
   const beforeCompletion = await getJson(`/api/orders/${orderId}/status`);
   assertEqual(beforeCompletion.order.status, 'Pending Payment', 'Stored order must remain Pending Payment before completion.');
@@ -167,6 +206,27 @@ try {
     { actorUserId: 'admin-lina' },
   );
   assertEqual(resolvedReport.report.status, 'resolved', 'Reports must be resolvable.');
+
+  const disputedOrderId = `smoke-dispute-${startedAt}`;
+  await prisma.order.create({
+    data: {
+      id: disputedOrderId,
+      serviceId,
+      buyerId: 'smoke-buyer',
+      sellerId: 'smoke-seller',
+      buyerName: 'smoke.buyer',
+      sellerName: 'smoke.seller',
+      status: 'Disputed',
+      amountPi: 4,
+      platformFeePi: 0.2,
+    },
+  });
+  const refunded = await postJson(
+    `/api/orders/${disputedOrderId}/refund`,
+    {},
+    { actorUserId: 'admin-lina' },
+  );
+  assertEqual(refunded.order.status, 'Refunded', 'Admin must be able to mark a disputed order refunded.');
 
   const afterCompletion = await getJson(`/api/orders/${orderId}/status`);
   assertEqual(afterCompletion.order.status, 'Completed', 'Stored order must persist the final status.');

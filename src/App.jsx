@@ -40,10 +40,13 @@ import {
   disputeOrder as disputeOrderApi,
   fetchMarketplaceData,
   removeServiceById,
+  refundOrder as refundOrderApi,
+  releaseOrder as releaseOrderApi,
   resolveReportById,
   reviewOrder as reviewOrderApi,
   startOrder as startOrderApi,
   syncUserSession,
+  updateSellerStatus as updateSellerStatusApi,
   updateServiceStatus,
 } from './api.js';
 
@@ -54,6 +57,7 @@ const ORDER_STATUS = {
   DELIVERED: 'Delivered',
   COMPLETED: 'Completed',
   DISPUTED: 'Disputed',
+  REFUNDED: 'Refunded',
   CANCELLED: 'Cancelled',
 };
 
@@ -80,6 +84,11 @@ const blankService = {
   accent: accentOptions[0],
   summary: '',
   terms: '',
+  portfolioUrl: '',
+  proofLink: '',
+  experience: '',
+  revisionPolicy: '',
+  requirementsFromBuyer: '',
 };
 
 const blankRequestAsset = {
@@ -93,22 +102,22 @@ const demoUsers = [
   {
     uid: 'buyer-ali',
     username: 'ali.pi',
-    role: 'Demo Buyer',
-    targetRole: 'Buyer',
-    walletStatus: 'Demo buyer account. No Pi Browser required.',
+    role: 'Demo Browse',
+    targetMode: 'Browse',
+    walletStatus: 'Demo browsing account. No Pi Browser required.',
   },
   {
     uid: 'pi-user-placeholder',
     username: 'pioneer.demo',
-    role: 'Demo Seller',
-    targetRole: 'Seller',
-    walletStatus: 'Demo seller account. Payments stay in mock mode.',
+    role: 'Demo Sell',
+    targetMode: 'Sell',
+    walletStatus: 'Demo selling account. Payments stay in mock mode.',
   },
   {
     uid: 'admin-lina',
     username: 'lina.admin',
     role: 'Demo Admin',
-    targetRole: 'Admin',
+    targetMode: 'Admin',
     walletStatus: 'Demo admin account for moderation testing.',
   },
 ];
@@ -124,7 +133,7 @@ const orderFlowSteps = [
 function App() {
   const [user, setUser] = useState(null);
   const [activeView, setActiveView] = useState('home');
-  const [selectedRole, setSelectedRole] = useState('Buyer');
+  const [selectedMode, setSelectedMode] = useState('Browse');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [query, setQuery] = useState('');
   const [services, setServices] = useState([]);
@@ -177,7 +186,7 @@ function App() {
   }, []);
 
   const approvedServices = useMemo(
-    () => services.filter((service) => service.status === 'approved'),
+    () => services.filter((service) => service.status === 'approved' && service.sellerStatus !== 'blocked'),
     [services],
   );
 
@@ -261,8 +270,8 @@ function App() {
       const piUser = await authenticateWithPi();
       const sessionUser = await attachServerRole(piUser);
       setUser(sessionUser);
-      if (sessionUser.appRole !== 'admin' && selectedRole === 'Admin') {
-        setSelectedRole('Buyer');
+      if (sessionUser.appRole !== 'admin' && selectedMode === 'Admin') {
+        setSelectedMode('Browse');
       }
       setFlowError('');
       setFlowNotice(`Connected as ${sessionUser.username}.`);
@@ -294,26 +303,27 @@ function App() {
     } catch {
       nextUser = {
         ...demoSession,
-        appRole: demoUser.uid === 'admin-lina' ? 'admin' : demoUser.targetRole.toLowerCase(),
+        appRole: demoUser.uid === 'admin-lina' ? 'admin' : 'user',
       };
     }
 
-    const targetRole = nextUser.appRole === 'admin' ? demoUser.targetRole : demoUser.targetRole === 'Admin' ? 'Buyer' : demoUser.targetRole;
+    const targetMode = nextUser.appRole === 'admin' ? demoUser.targetMode : demoUser.targetMode === 'Admin' ? 'Browse' : demoUser.targetMode;
     setUser(nextUser);
-    setSelectedRole(targetRole);
+    setSelectedMode(targetMode);
     setFlowError('');
     setFlowNotice(`Demo account active: ${demoUser.username}.`);
 
-    if (targetRole === 'Buyer') {
+    if (targetMode === 'Browse') {
       setOrderTab('buyer');
+      setActiveView('home');
     }
 
-    if (targetRole === 'Seller') {
+    if (targetMode === 'Sell') {
       setOrderTab('seller');
       setActiveView('orders');
     }
 
-    if (targetRole === 'Admin' && nextUser.appRole === 'admin') {
+    if (targetMode === 'Admin' && nextUser.appRole === 'admin') {
       setActiveView('admin');
     }
   }
@@ -349,6 +359,11 @@ function App() {
       icon: (newService.icon || newService.category.slice(0, 2)).toUpperCase().slice(0, 3),
       summary: newService.summary.trim(),
       terms: newService.terms.trim(),
+      portfolioUrl: newService.portfolioUrl.trim(),
+      proofLink: newService.proofLink.trim(),
+      experience: newService.experience.trim(),
+      revisionPolicy: newService.revisionPolicy.trim(),
+      requirementsFromBuyer: newService.requirementsFromBuyer.trim(),
       deliverables: ['Digital delivery message or link', 'Buyer confirmation required', 'Pi payment placeholder'],
     };
 
@@ -358,7 +373,7 @@ function App() {
       setNewService(blankService);
       setFlowError('');
       setFlowNotice('Service submitted for admin review.');
-      setSelectedRole('Seller');
+      setSelectedMode('Sell');
       setActiveView(isAdmin ? 'admin' : 'profile');
       if (isAdmin) {
         setAdminTab('services');
@@ -577,6 +592,22 @@ function App() {
     }
   }
 
+  async function updateSellerStatus(sellerId, sellerStatus) {
+    try {
+      await updateSellerStatusApi(sellerId, sellerStatus, user);
+      setFlowNotice(`Seller marked ${sellerStatus}.`);
+      setFlowError('');
+      setServices((current) =>
+        current.map((service) =>
+          service.sellerId === sellerId ? { ...service, sellerStatus } : service,
+        ),
+      );
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Seller status could not be updated.'));
+      setFlowNotice('');
+    }
+  }
+
   async function removeService(serviceId) {
     try {
       await removeServiceById(serviceId, user);
@@ -619,6 +650,30 @@ function App() {
     }
   }
 
+  async function refundOrder(orderId) {
+    try {
+      const updatedOrder = await refundOrderApi(orderId, user);
+      setFlowNotice('Dispute resolved: buyer refund recorded.');
+      setFlowError('');
+      replaceOrder(updatedOrder);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Order could not be marked refunded.'));
+      setFlowNotice('');
+    }
+  }
+
+  async function releaseOrder(orderId) {
+    try {
+      const updatedOrder = await releaseOrderApi(orderId, user);
+      setFlowNotice('Dispute resolved: order released to seller.');
+      setFlowError('');
+      replaceOrder(updatedOrder);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Order could not be released to seller.'));
+      setFlowNotice('');
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="top-bar">
@@ -637,7 +692,7 @@ function App() {
       <main>
         <PiAccessStrip
           user={user}
-          selectedRole={selectedRole}
+          selectedMode={selectedMode}
           piIntegrationStatus={piIntegrationStatus}
           onLogin={handlePiLogin}
           onDemoUser={handleDemoUser}
@@ -714,8 +769,8 @@ function App() {
         {!isInitialMarketplaceLoading && activeView === 'profile' && (
           <ProfileView
             user={user}
-            selectedRole={selectedRole}
-            setSelectedRole={setSelectedRole}
+            selectedMode={selectedMode}
+            setSelectedMode={setSelectedMode}
             isAdmin={isAdmin}
             userServices={userServices}
             buyerOrders={userBuyerOrders}
@@ -734,8 +789,11 @@ function App() {
               orders={orders}
               reports={reports}
               moderateService={moderateService}
+              updateSellerStatus={updateSellerStatus}
               removeService={removeService}
               resolveReport={resolveReport}
+              refundOrder={refundOrder}
+              releaseOrder={releaseOrder}
               openService={openService}
             />
           ) : (
@@ -755,7 +813,7 @@ function App() {
   );
 }
 
-function PiAccessStrip({ user, selectedRole, piIntegrationStatus, onLogin, onDemoUser }) {
+function PiAccessStrip({ user, selectedMode, piIntegrationStatus, onLogin, onDemoUser }) {
   const isRealPiUser = user?.authProvider === 'pi-sdk';
   const showDemoUsers = !isRealPiUser;
 
@@ -766,7 +824,7 @@ function PiAccessStrip({ user, selectedRole, piIntegrationStatus, onLogin, onDem
           <span className="eyebrow">Pi Browser ready</span>
           <p>
             {user
-              ? `${isRealPiUser ? 'Signed in' : 'Testing'} as ${user.username}. Active role: ${selectedRole}.`
+              ? `${isRealPiUser ? 'Signed in' : 'Testing'} as ${user.username}. Active mode: ${selectedMode}.`
               : `Use Pi Login when available, or choose a demo account for testing. Mode: ${piIntegrationStatus.mode}.`}
           </p>
         </div>
@@ -934,6 +992,7 @@ function ServiceCard({ service, onClick }) {
         </div>
         <div className="meta-row">
           <span><Star size={15} /> {service.rating || 'New'}</span>
+          <span><ShieldCheck size={15} /> {formatSellerStatus(service.sellerStatus)}</span>
           <span><Clock3 size={15} /> {service.deliveryDays}d</span>
           <strong>{service.pricePi} Pi</strong>
         </div>
@@ -961,6 +1020,7 @@ function DetailView({
   const deliveryConfirmed = activeOrder?.status === ORDER_STATUS.COMPLETED;
   const canConfirm = activeOrder?.status === ORDER_STATUS.DELIVERED;
   const isOwnListing = user?.uid === service.sellerId;
+  const isBlockedSeller = service.sellerStatus === 'blocked';
 
   return (
     <section className="view-stack">
@@ -982,7 +1042,7 @@ function DetailView({
             <strong>{service.seller}</strong>
             <small>{service.sellerHandle}</small>
           </div>
-          <span className="rating-pill"><Star size={15} /> {service.rating || 'New'}</span>
+          <span className="rating-pill"><ShieldCheck size={15} /> {formatSellerStatus(service.sellerStatus)}</span>
         </div>
 
         <div className="price-grid">
@@ -1003,6 +1063,18 @@ function DetailView({
             <span className="eyebrow">Terms</span>
             <p>{service.terms}</p>
           </div>
+          <div className="terms-box">
+            <span className="eyebrow">Trust signals</span>
+            <p>{service.experience || 'New seller profile.'}</p>
+            <p><strong>Requirements:</strong> {service.requirementsFromBuyer || 'Buyer brief required before work starts.'}</p>
+            <p><strong>Revision policy:</strong> {service.revisionPolicy || 'Revision policy not provided.'}</p>
+            {service.portfolioUrl && (
+              <span className="delivery-link"><LinkIcon size={15} /> {service.portfolioUrl}</span>
+            )}
+            {service.proofLink && (
+              <span className="delivery-link"><LinkIcon size={15} /> {service.proofLink}</span>
+            )}
+          </div>
         </div>
       </article>
 
@@ -1022,7 +1094,14 @@ function DetailView({
           />
         )}
 
-        {!activeOrder && !isOwnListing && (
+        {!activeOrder && isBlockedSeller && (
+          <StatusHint
+            icon={<AlertTriangle size={18} />}
+            text="This seller is blocked while admin reviews trust and safety reports."
+          />
+        )}
+
+        {!activeOrder && !isOwnListing && !isBlockedSeller && (
           <div className="request-materials">
             <label>
               Brief
@@ -1159,7 +1238,7 @@ function OrderProgress({
 
 function StatusTimeline({ status }) {
   const activeIndex = orderFlowSteps.findIndex((step) => step.status === status);
-  const isStopped = [ORDER_STATUS.DISPUTED, ORDER_STATUS.CANCELLED].includes(status);
+  const isStopped = [ORDER_STATUS.DISPUTED, ORDER_STATUS.REFUNDED, ORDER_STATUS.CANCELLED].includes(status);
 
   return (
     <div className={isStopped ? 'status-timeline stopped' : 'status-timeline'} aria-label="Order progress">
@@ -1209,6 +1288,8 @@ function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) 
     newService.title.trim() &&
     newService.summary.trim() &&
     newService.terms.trim() &&
+    newService.revisionPolicy.trim() &&
+    newService.requirementsFromBuyer.trim() &&
     pricePi > 0 &&
     depositPi > 0 &&
     depositPi <= pricePi &&
@@ -1335,6 +1416,56 @@ function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) 
             placeholder="State what the buyer must provide and what is excluded"
           />
         </label>
+
+        <label>
+          Experience
+          <textarea
+            value={newService.experience}
+            onChange={(event) => updateField('experience', event.target.value)}
+            rows={3}
+            placeholder="Briefly describe your relevant digital service experience"
+          />
+        </label>
+
+        <label>
+          Requirements from buyer
+          <textarea
+            value={newService.requirementsFromBuyer}
+            onChange={(event) => updateField('requirementsFromBuyer', event.target.value)}
+            rows={3}
+            placeholder="List the exact files, text, references, or details you need from the buyer"
+          />
+        </label>
+
+        <label>
+          Revision policy
+          <textarea
+            value={newService.revisionPolicy}
+            onChange={(event) => updateField('revisionPolicy', event.target.value)}
+            rows={3}
+            placeholder="Example: one small revision after first delivery"
+          />
+        </label>
+
+        <label>
+          Portfolio URL
+          <input
+            value={newService.portfolioUrl}
+            onChange={(event) => updateField('portfolioUrl', event.target.value)}
+            placeholder="https://example.com/portfolio"
+          />
+        </label>
+
+        <label>
+          Proof link
+          <input
+            value={newService.proofLink}
+            onChange={(event) => updateField('proofLink', event.target.value)}
+            placeholder="https://example.com/work-samples"
+          />
+        </label>
+
+        <p className="field-hint">Do not include phone numbers, email, messaging apps, or social contact links. Admin reviews listings before publishing.</p>
 
         <button className="primary-button" disabled={!canSubmit || !user}>
           <Plus size={19} />
@@ -1550,8 +1681,8 @@ function OrderCard({
 
 function ProfileView({
   user,
-  selectedRole,
-  setSelectedRole,
+  selectedMode,
+  setSelectedMode,
   isAdmin,
   userServices,
   buyerOrders,
@@ -1559,7 +1690,7 @@ function ProfileView({
   onLogin,
   openService,
 }) {
-  const profileRoles = isAdmin ? ['Buyer', 'Seller', 'Admin'] : ['Buyer', 'Seller'];
+  const profileModes = isAdmin ? ['Browse', 'Sell', 'Admin'] : ['Browse', 'Sell'];
   const completedOrders = [...buyerOrders, ...sellerOrders].filter(
     (order) => order.status === ORDER_STATUS.COMPLETED,
   );
@@ -1587,10 +1718,10 @@ function ProfileView({
         )}
       </div>
 
-      <div className="segmented role-switch">
-        {profileRoles.map((role) => (
-          <button key={role} className={selectedRole === role ? 'active' : ''} onClick={() => setSelectedRole(role)}>
-            {role}
+      <div className="segmented mode-switch">
+        {profileModes.map((mode) => (
+          <button key={mode} className={selectedMode === mode ? 'active' : ''} onClick={() => setSelectedMode(mode)}>
+            {mode}
           </button>
         ))}
       </div>
@@ -1649,8 +1780,11 @@ function AdminView({
   orders,
   reports,
   moderateService,
+  updateSellerStatus,
   removeService,
   resolveReport,
+  refundOrder,
+  releaseOrder,
   openService,
 }) {
   const pendingCount = services.filter((service) => service.status === 'pending').length;
@@ -1690,6 +1824,7 @@ function AdminView({
                 </span>
               </button>
               <p>{service.summary}</p>
+              <p className="muted-line">Seller status: {formatSellerStatus(service.sellerStatus)}</p>
               <div className="moderation-actions">
                 <button className="secondary-button small" onClick={() => moderateService(service.id, 'approved')}>
                   Approve
@@ -1703,6 +1838,12 @@ function AdminView({
                 </button>
                 <button className="ghost-button small danger" onClick={() => removeService(service.id)}>
                   Remove
+                </button>
+                <button className="ghost-button small" onClick={() => updateSellerStatus(service.sellerId, 'verified')}>
+                  Verify seller
+                </button>
+                <button className="ghost-button small danger" onClick={() => updateSellerStatus(service.sellerId, 'blocked')}>
+                  Block seller
                 </button>
               </div>
             </article>
@@ -1726,6 +1867,16 @@ function AdminView({
                   <Metric label="Fee 5%" value={`${order.platformFeePi || 0} Pi`} />
                   <Metric label="Created" value={order.createdAt} />
                 </div>
+                {order.status === ORDER_STATUS.DISPUTED && (
+                  <div className="moderation-actions">
+                    <button className="secondary-button small" onClick={() => releaseOrder(order.id)}>
+                      Release to seller
+                    </button>
+                    <button className="ghost-button small danger" onClick={() => refundOrder(order.id)}>
+                      Refund buyer
+                    </button>
+                  </div>
+                )}
               </article>
             );
           })}
@@ -1767,7 +1918,7 @@ function Metric({ label, value }) {
 
 function StatusBadge({ status }) {
   const isGood = [ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(status);
-  const isRisk = [ORDER_STATUS.DISPUTED, ORDER_STATUS.CANCELLED].includes(status);
+  const isRisk = [ORDER_STATUS.DISPUTED, ORDER_STATUS.REFUNDED, ORDER_STATUS.CANCELLED].includes(status);
   return <span className={isRisk ? 'status risk' : isGood ? 'status success' : 'status'}>{status}</span>;
 }
 
@@ -1828,6 +1979,12 @@ function formatFileSize(bytes) {
 
 function getErrorMessage(error, fallback) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function formatSellerStatus(status) {
+  if (status === 'verified') return 'Verified';
+  if (status === 'blocked') return 'Blocked';
+  return 'New seller';
 }
 
 export default App;

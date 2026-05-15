@@ -89,6 +89,11 @@ export async function removeServiceById(serviceId, actor) {
   return data.service;
 }
 
+export async function updateSellerStatus(userId, sellerStatus, actor) {
+  const data = await postJsonAs(`/api/users/${encodeURIComponent(userId)}/seller-status`, { sellerStatus }, actor);
+  return data.user;
+}
+
 export async function createOrder(order) {
   const data = await postJson('/api/orders', order);
   return data.order;
@@ -116,6 +121,16 @@ export async function cancelOrder(orderId) {
 
 export async function disputeOrder(orderId) {
   const data = await postJson(`/api/orders/${encodeURIComponent(orderId)}/dispute`, {});
+  return data.order;
+}
+
+export async function refundOrder(orderId, actor) {
+  const data = await postJsonAs(`/api/orders/${encodeURIComponent(orderId)}/refund`, {}, actor);
+  return data.order;
+}
+
+export async function releaseOrder(orderId, actor) {
+  const data = await postJsonAs(`/api/orders/${encodeURIComponent(orderId)}/release`, {}, actor);
   return data.order;
 }
 
