@@ -390,6 +390,9 @@ const arPatterns = [
 ];
 
 export function getInitialLanguage() {
+  const urlLanguage = getLanguageFromUrl();
+  if (urlLanguage) return urlLanguage;
+
   const savedLanguage = getSavedLanguage();
   if (savedLanguage) return savedLanguage;
 
@@ -448,6 +451,16 @@ function getSavedLanguage() {
   try {
     const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
     return SUPPORTED_LANGUAGES.has(savedLanguage) ? savedLanguage : '';
+  } catch {
+    return '';
+  }
+}
+
+function getLanguageFromUrl() {
+  if (typeof window === 'undefined') return '';
+  try {
+    const language = new URLSearchParams(window.location.search).get('lang');
+    return SUPPORTED_LANGUAGES.has(language) ? language : '';
   } catch {
     return '';
   }

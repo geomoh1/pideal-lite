@@ -397,7 +397,7 @@ function App() {
   }
 
   async function handleShareService(service) {
-    const shareUrl = getServiceShareUrl(service);
+    const shareUrl = getServiceShareUrl(service, language);
     const shareData = {
       title: service.title,
       text: service.summary || 'Order this service securely with PiDeal escrow.',
@@ -2508,11 +2508,12 @@ function getInitialServiceSlugFromUrl() {
   return params.get('service') || params.get('s') || '';
 }
 
-function getServiceShareUrl(service) {
+function getServiceShareUrl(service, language = 'en') {
   if (typeof window === 'undefined') return '';
   const configuredBaseUrl = (import.meta.env.VITE_PUBLIC_SITE_URL || '').replace(/\/$/, '');
   const baseUrl = configuredBaseUrl || window.location.origin;
-  return `${baseUrl}/service/${encodeURIComponent(service.slug || service.id)}`;
+  const lang = language === 'ar' ? 'ar' : 'en';
+  return `${baseUrl}/service/${encodeURIComponent(service.slug || service.id)}?lang=${lang}`;
 }
 
 function getPrivateExecutionUrl(service) {

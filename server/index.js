@@ -64,6 +64,94 @@ const ESCROW_EVENT_TYPE = {
   REFUNDED: 'refunded',
 };
 
+const PUBLIC_SERVICE_TEXT = {
+  en: {
+    service: 'PiDeal service',
+    escrow: 'Escrow protected',
+    verifiedIdentity: 'Verified Pi identity',
+    dispute: 'Dispute resolution',
+    order: 'Order securely in Pi Browser',
+    share: 'Share',
+    price: 'Price',
+    deposit: 'Deposit',
+    delivery: 'Delivery',
+    days: 'days',
+    sellerRating: 'Seller rating',
+    rating: 'rating',
+    newSeller: 'New seller',
+    underReview: 'Under review',
+    completed: 'completed',
+    publicProof: 'Public order proof',
+    verifiedSeller: 'Verified seller',
+    whatYouGet: 'What you get',
+    digitalDelivery: 'Digital delivery message or link',
+    buyerConfirmation: 'Buyer confirmation required',
+    piPayment: 'Pi escrow payment',
+    continueSafely: 'Continue safely',
+    ordersInside: 'Orders and payments work inside Pi Browser',
+    gateMessage:
+      'PiDeal protects both buyer and seller with verified Pi identity, escrow, protected delivery, and dispute resolution.',
+    secureCheckout: 'Secure checkout',
+    escrowProtection: 'Escrow protection',
+    disputeSupport: 'Dispute support',
+    openPiBrowser: 'Open in Pi Browser',
+    getPiBrowser: 'Get Pi Browser',
+    linkCopied: 'Link copied',
+    close: 'Close',
+    notFound: 'Service not found',
+    unavailable: 'This public service is unavailable or awaiting review.',
+    openPiDeal: 'Open PiDeal',
+    shareCardTrust: 'PiDeal escrow protected',
+    shareCardCta: 'Order securely inside Pi Browser',
+  },
+  ar: {
+    service: 'خدمة على PiDeal',
+    escrow: 'محمي بنظام الضمان',
+    verifiedIdentity: 'هوية Pi موثقة',
+    dispute: 'حل النزاعات',
+    order: 'اطلب بأمان داخل Pi Browser',
+    share: 'مشاركة',
+    price: 'السعر',
+    deposit: 'العربون',
+    delivery: 'مدة التسليم',
+    days: 'أيام',
+    sellerRating: 'تقييم البائع',
+    rating: 'تقييم',
+    newSeller: 'بائع جديد',
+    underReview: 'قيد المراجعة',
+    completed: 'طلبات مكتملة',
+    publicProof: 'إثبات طلب عام',
+    verifiedSeller: 'بائع موثق',
+    whatYouGet: 'ماذا ستحصل عليه',
+    digitalDelivery: 'رسالة أو رابط تسليم رقمي',
+    buyerConfirmation: 'يتطلب تأكيد المشتري',
+    piPayment: 'دفع Pi داخل التطبيق',
+    continueSafely: 'تابع بأمان',
+    ordersInside: 'الطلبات والمدفوعات تعمل داخل Pi Browser',
+    gateMessage:
+      'يحمي PiDeal المشتري والبائع عبر هوية Pi الموثقة، والضمان، والتسليم المحمي، وحل النزاعات.',
+    secureCheckout: 'دفع آمن',
+    escrowProtection: 'حماية الضمان',
+    disputeSupport: 'دعم النزاعات',
+    openPiBrowser: 'افتح في Pi Browser',
+    getPiBrowser: 'حمّل Pi Browser',
+    linkCopied: 'تم نسخ الرابط',
+    close: 'إغلاق',
+    notFound: 'الخدمة غير موجودة',
+    unavailable: 'هذه الخدمة العامة غير متاحة أو بانتظار المراجعة.',
+    openPiDeal: 'افتح PiDeal',
+    shareCardTrust: 'خدمة محمية بضمان PiDeal',
+    shareCardCta: 'اطلب بأمان داخل Pi Browser',
+  },
+};
+
+const PUBLIC_DELIVERABLE_TEXT_KEYS = {
+  'Digital delivery message or link': 'digitalDelivery',
+  'Buyer confirmation required': 'buyerConfirmation',
+  'Pi escrow payment': 'piPayment',
+  'Pi payment placeholder': 'piPayment',
+};
+
 const ESCROW_DISPUTE_WINDOW_HOURS = normalizeNonNegativeNumber(
   process.env.ESCROW_DISPUTE_WINDOW_HOURS ?? process.env.DISPUTE_WINDOW_HOURS ?? 72,
   72,
@@ -206,7 +294,7 @@ app.get('/service/:slug/share-card.svg', async (request, response, next) => {
     }
 
     response.set('Cache-Control', 'public, max-age=300');
-    return response.type('image/svg+xml').send(renderServiceShareCardSvg(publicService));
+    return response.type('image/svg+xml').send(renderServiceShareCardSvg(publicService, getPublicLanguage(request)));
   } catch (error) {
     return next(error);
   }
@@ -1289,19 +1377,27 @@ function slugify(value) {
 }
 
 function renderPublicServicePage(request, service) {
-  const shareUrl = `${getPublicBaseUrl(request)}/service/${encodeURIComponent(service.slug)}`;
-  const executionUrl = `${getExecutionAppBaseUrl(request)}/?service=${encodeURIComponent(service.slug)}&from=public`;
-  const imageUrl = `${getPublicBaseUrl(request)}/service/${encodeURIComponent(service.slug)}/share-card.svg`;
+  const lang = getPublicLanguage(request);
+  const isArabic = lang === 'ar';
+  const dir = isArabic ? 'rtl' : 'ltr';
+  const t = PUBLIC_SERVICE_TEXT[lang];
+  const encodedSlug = encodeURIComponent(service.slug);
+  const publicBaseUrl = getPublicBaseUrl(request);
+  const shareUrl = `${publicBaseUrl}/service/${encodedSlug}?lang=${lang}`;
+  const languageSwitchUrl = `${publicBaseUrl}/service/${encodedSlug}?lang=${isArabic ? 'en' : 'ar'}`;
+  const languageSwitchLabel = isArabic ? 'English' : 'العربية';
+  const executionUrl = `${getExecutionAppBaseUrl(request)}/?service=${encodedSlug}&from=public&lang=${lang}`;
+  const imageUrl = `${publicBaseUrl}/service/${encodedSlug}/share-card.svg?lang=${lang}`;
   const title = `${service.title} | PiDeal`;
   const description = truncateText(
     service.summary || `${service.category} service protected by PiDeal escrow.`,
     155,
   );
-  const ratingLabel = service.rating ? `${service.rating} rating` : 'New seller';
-  const completedOrdersLabel = `${service.completedOrders || 0} completed`;
+  const ratingLabel = service.rating ? `${service.rating} ${t.rating}` : t.newSeller;
+  const completedOrdersLabel = `${service.completedOrders || 0} ${t.completed}`;
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${lang}" dir="${dir}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -1323,57 +1419,60 @@ function renderPublicServicePage(request, service) {
     <main class="page">
       <section class="hero">
         <div class="copy">
-          <span class="eyebrow">PiDeal service</span>
+          <div class="public-topbar">
+            <span class="eyebrow">${escapeHtml(t.service)}</span>
+            <a class="language-link" href="${escapeAttr(languageSwitchUrl)}">${escapeHtml(languageSwitchLabel)}</a>
+          </div>
           <h1>${escapeHtml(service.title)}</h1>
           <p>${escapeHtml(description)}</p>
           <div class="badges">
-            <span>Escrow protected</span>
-            <span>Verified Pi identity</span>
-            <span>Dispute resolution</span>
+            <span>${escapeHtml(t.escrow)}</span>
+            <span>${escapeHtml(t.verifiedIdentity)}</span>
+            <span>${escapeHtml(t.dispute)}</span>
           </div>
           <div class="actions">
-            <a class="primary" href="${escapeAttr(executionUrl)}" data-order>Order securely in Pi Browser</a>
-            <button class="secondary" type="button" data-share>Share</button>
+            <a class="primary" href="${escapeAttr(executionUrl)}" data-order>${escapeHtml(t.order)}</a>
+            <button class="secondary" type="button" data-share>${escapeHtml(t.share)}</button>
           </div>
         </div>
         <aside class="card">
           <div class="art" style="--accent: ${escapeAttr(service.accent)}">${escapeHtml(service.icon)}</div>
           <dl>
-            <div><dt>Price</dt><dd>${escapeHtml(String(service.pricePi))} Pi</dd></div>
-            <div><dt>Deposit</dt><dd>${escapeHtml(String(service.depositPi))} Pi</dd></div>
-            <div><dt>Delivery</dt><dd>${escapeHtml(String(service.deliveryDays))} days</dd></div>
+            <div><dt>${escapeHtml(t.price)}</dt><dd>${escapeHtml(String(service.pricePi))} Pi</dd></div>
+            <div><dt>${escapeHtml(t.deposit)}</dt><dd>${escapeHtml(String(service.depositPi))} Pi</dd></div>
+            <div><dt>${escapeHtml(t.delivery)}</dt><dd>${escapeHtml(String(service.deliveryDays))} ${escapeHtml(t.days)}</dd></div>
           </dl>
         </aside>
       </section>
 
       <section class="trust">
-        <div><strong>${escapeHtml(ratingLabel)}</strong><span>Seller rating</span></div>
-        <div><strong>${escapeHtml(completedOrdersLabel)}</strong><span>Public order proof</span></div>
-        <div><strong>${escapeHtml(service.seller.displayName)}</strong><span>${escapeHtml(formatPublicSellerStatus(service.seller.status))}</span></div>
+        <div><strong>${escapeHtml(ratingLabel)}</strong><span>${escapeHtml(t.sellerRating)}</span></div>
+        <div><strong>${escapeHtml(completedOrdersLabel)}</strong><span>${escapeHtml(t.publicProof)}</span></div>
+        <div><strong>${escapeHtml(service.seller.displayName)}</strong><span>${escapeHtml(formatPublicSellerStatus(service.seller.status, t))}</span></div>
       </section>
 
       <section class="details">
-        <h2>What you get</h2>
+        <h2>${escapeHtml(t.whatYouGet)}</h2>
         <ul>
-          ${service.deliverables.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+          ${service.deliverables.map((item) => `<li>${escapeHtml(formatPublicDeliverable(item, t))}</li>`).join('')}
         </ul>
       </section>
     </main>
 
     <div class="gate" hidden data-gate>
       <div class="gate-panel">
-        <button class="close" type="button" data-close aria-label="Close">x</button>
-        <span class="eyebrow">Continue safely</span>
-        <h2>Orders and payments work inside Pi Browser</h2>
-        <p>PiDeal protects both buyer and seller with verified Pi identity, escrow, protected delivery, and dispute resolution.</p>
+        <button class="close" type="button" data-close aria-label="${escapeAttr(t.close)}">x</button>
+        <span class="eyebrow">${escapeHtml(t.continueSafely)}</span>
+        <h2>${escapeHtml(t.ordersInside)}</h2>
+        <p>${escapeHtml(t.gateMessage)}</p>
         <div class="gate-grid">
-          <span>Secure checkout</span>
-          <span>Escrow protection</span>
-          <span>Verified Pi identity</span>
-          <span>Dispute support</span>
+          <span>${escapeHtml(t.secureCheckout)}</span>
+          <span>${escapeHtml(t.escrowProtection)}</span>
+          <span>${escapeHtml(t.verifiedIdentity)}</span>
+          <span>${escapeHtml(t.disputeSupport)}</span>
         </div>
-        <a class="primary full" href="${escapeAttr(executionUrl)}">Open in Pi Browser</a>
-        <a class="secondary full" href="https://minepi.com/pi-browser/" rel="noopener">Get Pi Browser</a>
+        <a class="primary full" href="${escapeAttr(executionUrl)}">${escapeHtml(t.openPiBrowser)}</a>
+        <a class="secondary full" href="https://minepi.com/pi-browser/" rel="noopener">${escapeHtml(t.getPiBrowser)}</a>
       </div>
     </div>
 
@@ -1398,7 +1497,7 @@ function renderPublicServicePage(request, service) {
           await navigator.share(shareData).catch(() => {});
         } else if (navigator.clipboard) {
           await navigator.clipboard.writeText(shareData.url).catch(() => {});
-          alert('Link copied');
+          alert(${htmlSafeJson(t.linkCopied)});
         }
       });
     </script>
@@ -1407,14 +1506,17 @@ function renderPublicServicePage(request, service) {
 }
 
 function renderPublicNotFoundPage(request) {
+  const lang = getPublicLanguage(request);
+  const dir = lang === 'ar' ? 'rtl' : 'ltr';
+  const t = PUBLIC_SERVICE_TEXT[lang];
   const homeUrl = getExecutionAppBaseUrl(request);
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${lang}" dir="${dir}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Service not found | PiDeal</title>
+    <title>${escapeHtml(t.notFound)} | PiDeal</title>
     <style>${getPublicServiceCss()}</style>
   </head>
   <body>
@@ -1422,9 +1524,9 @@ function renderPublicNotFoundPage(request) {
       <section class="hero">
         <div class="copy">
           <span class="eyebrow">PiDeal</span>
-          <h1>Service not found</h1>
-          <p>This public service is unavailable or awaiting review.</p>
-          <div class="actions"><a class="primary" href="${escapeAttr(homeUrl)}">Open PiDeal</a></div>
+          <h1>${escapeHtml(t.notFound)}</h1>
+          <p>${escapeHtml(t.unavailable)}</p>
+          <div class="actions"><a class="primary" href="${escapeAttr(homeUrl)}">${escapeHtml(t.openPiDeal)}</a></div>
         </div>
       </section>
     </main>
@@ -1432,7 +1534,10 @@ function renderPublicNotFoundPage(request) {
 </html>`;
 }
 
-function renderServiceShareCardSvg(service) {
+function renderServiceShareCardSvg(service, lang = 'en') {
+  const t = PUBLIC_SERVICE_TEXT[lang] || PUBLIC_SERVICE_TEXT.en;
+  const ratingLabel = service.rating ? `${service.rating} ${t.rating}` : t.newSeller;
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -1444,13 +1549,13 @@ function renderServiceShareCardSvg(service) {
   <rect x="72" y="70" width="1056" height="490" rx="36" fill="#ffffff" stroke="#d9e7df" stroke-width="4"/>
   <circle cx="160" cy="165" r="58" fill="${escapeAttr(service.accent)}"/>
   <text x="160" y="181" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="800" fill="#1d2520">${escapeHtml(service.icon)}</text>
-  <text x="240" y="145" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="#2d8f6f">PiDeal escrow protected</text>
+  <text x="240" y="145" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="#2d8f6f">${escapeHtml(t.shareCardTrust)}</text>
   <text x="240" y="215" font-family="Arial, sans-serif" font-size="58" font-weight="900" fill="#121716">${escapeHtml(truncateText(service.title, 42))}</text>
   <text x="240" y="285" font-family="Arial, sans-serif" font-size="30" fill="#52605a">${escapeHtml(truncateText(service.summary, 74))}</text>
   <text x="240" y="390" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#121716">${escapeHtml(String(service.pricePi))} Pi</text>
-  <text x="390" y="390" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#121716">${escapeHtml(String(service.deliveryDays))} days</text>
-  <text x="570" y="390" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#121716">${escapeHtml(service.rating ? `${service.rating} rating` : 'New seller')}</text>
-  <text x="240" y="475" font-family="Arial, sans-serif" font-size="26" fill="#52605a">Order securely inside Pi Browser</text>
+  <text x="390" y="390" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#121716">${escapeHtml(String(service.deliveryDays))} ${escapeHtml(t.days)}</text>
+  <text x="570" y="390" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#121716">${escapeHtml(ratingLabel)}</text>
+  <text x="240" y="475" font-family="Arial, sans-serif" font-size="26" fill="#52605a">${escapeHtml(t.shareCardCta)}</text>
 </svg>`;
 }
 
@@ -1463,7 +1568,10 @@ function getPublicServiceCss() {
     .hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr); gap: 18px; align-items: stretch; }
     .copy, .card, .trust, .details, .gate-panel { border: 1px solid #d9e7df; border-radius: 14px; background: #fff; box-shadow: 0 22px 60px rgba(21, 48, 39, 0.08); }
     .copy { padding: clamp(24px, 6vw, 56px); }
+    .public-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
     .eyebrow { display: inline-block; margin-bottom: 10px; color: #2d8f6f; font-size: 0.78rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+    .public-topbar .eyebrow { margin-bottom: 0; }
+    .language-link { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 0 12px; border: 1px solid #d9e7df; border-radius: 8px; color: #1d2520; background: #f8faf7; font-size: 0.88rem; font-weight: 900; text-decoration: none; }
     h1, h2, p { margin: 0; }
     h1 { max-width: 880px; font-size: clamp(2.35rem, 8vw, 5.5rem); line-height: 0.98; letter-spacing: 0; }
     h2 { font-size: clamp(1.45rem, 5vw, 2.35rem); line-height: 1.05; letter-spacing: 0; }
@@ -1491,12 +1599,18 @@ function getPublicServiceCss() {
     .gate[hidden] { display: none; }
     .gate-panel { position: relative; width: min(100%, 520px); padding: 24px; }
     .close { position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border: 1px solid #d9e7df; border-radius: 8px; background: #f8faf7; cursor: pointer; }
+    [dir="rtl"] .eyebrow { letter-spacing: 0; }
+    [dir="rtl"] .close { right: auto; left: 12px; }
     @media (max-width: 760px) {
       .hero { grid-template-columns: 1fr; }
       .trust { grid-template-columns: 1fr; }
       .copy { padding: 24px; }
     }
   `;
+}
+
+function getPublicLanguage(request) {
+  return request.query?.lang === 'ar' ? 'ar' : 'en';
 }
 
 function getPublicBaseUrl(request) {
@@ -1518,10 +1632,15 @@ function truncateText(value, maxLength) {
   return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
 }
 
-function formatPublicSellerStatus(status) {
-  if (status === 'verified') return 'Verified seller';
-  if (status === 'blocked') return 'Under review';
-  return 'New seller';
+function formatPublicSellerStatus(status, t = PUBLIC_SERVICE_TEXT.en) {
+  if (status === 'verified') return t.verifiedSeller;
+  if (status === 'blocked') return t.underReview;
+  return t.newSeller;
+}
+
+function formatPublicDeliverable(item, t = PUBLIC_SERVICE_TEXT.en) {
+  const textKey = PUBLIC_DELIVERABLE_TEXT_KEYS[item];
+  return textKey ? t[textKey] : item;
 }
 
 function escapeHtml(value) {

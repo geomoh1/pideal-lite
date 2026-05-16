@@ -208,6 +208,11 @@ try {
     publicPage.includes('<meta property="og:title"'),
     'Public service page must include Open Graph title metadata.',
   );
+  const arabicPublicPage = await getText(`/service/${approvedService.service.slug}?lang=ar`);
+  assertTruthy(
+    arabicPublicPage.includes('<html lang="ar" dir="rtl">'),
+    'Public service page must support Arabic RTL rendering.',
+  );
 
   const verifiedSeller = await postJson(
     '/api/users/smoke-seller/seller-status',
