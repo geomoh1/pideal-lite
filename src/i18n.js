@@ -63,7 +63,7 @@ const ar = {
   Language: 'اللغة',
   English: 'English',
   Arabic: 'العربية',
-  'Buy and sell digital services with Pi.': 'اشترِ وبِع الخدمات الرقمية باستخدام Pi.',
+  'Buy and sell digital services with Pi.': 'اشترِ وبِع خدمات رقمية باستخدام Pi Network.',
   'Pi Browser ready': 'جاهز لـ Pi Browser',
   'Sign in with Pi Browser to buy, sell, and manage orders.': 'سجل الدخول عبر Pi Browser للشراء والبيع وإدارة الطلبات.',
   Connected: 'متصل',
@@ -89,9 +89,9 @@ const ar = {
   Templates: 'قوالب',
 
   'PiDeal Lite': 'PiDeal Lite',
-  'Fast digital services for Pi pioneers.': 'خدمات رقمية سريعة لمستخدمي Pi.',
-  'Browse, order, pay a mock Pi deposit, receive delivery, confirm, and rate.':
-    'تصفح، اطلب، ادفع عربون Pi تجريبي، استلم العمل، أكد التسليم، ثم قيّم.',
+  'Fast digital services for Pi Network users.': 'خدمات رقمية احترافية وسريعة لمستخدمي Pi Network.',
+  'Browse, order, pay securely with Pi, receive delivery, confirm, and rate.':
+    'تصفح الخدمات، اطلب ما تحتاجه، ادفع بأمان عبر Pi Network، استلم العمل، ثم أكد وقيّم.',
   Commission: 'العمولة',
   Scope: 'النطاق',
   'Digital only': 'رقمي فقط',

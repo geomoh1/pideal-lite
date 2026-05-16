@@ -1107,8 +1107,8 @@ function HomeView({
       <div className="home-hero">
         <div>
           <span className="eyebrow">PiDeal Lite</span>
-          <h1>Fast digital services for Pi pioneers.</h1>
-          <p>Browse, order, pay a mock Pi deposit, receive delivery, confirm, and rate.</p>
+          <h1>Fast digital services for Pi Network users.</h1>
+          <p>Browse, order, pay securely with Pi, receive delivery, confirm, and rate.</p>
         </div>
         <div className="hero-metrics">
           <Metric label="Commission" value={platformFeePercent} />
