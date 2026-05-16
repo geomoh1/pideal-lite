@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PrismaClient } from '@prisma/client';
 
+process.env.DATABASE_URL ||= 'file:./dev.db';
+
 const prisma = new PrismaClient();
 const currentFile = fileURLToPath(import.meta.url);
 const migrationsDir = path.join(path.dirname(currentFile), 'migrations');

@@ -10,7 +10,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "start": "node server/index.js",
-    "prisma:generate": "prisma generate",
+    "prisma:generate": "node prisma/generateClient.js",
     "prisma:apply": "node prisma/applyMigrations.js",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
