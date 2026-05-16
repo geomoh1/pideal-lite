@@ -104,6 +104,34 @@ app.post('/api/session', async (request, response, next) => {
   }
 });
 
+app.get('/api/notifications', async (request, response, next) => {
+  try {
+    const userId = getActorUserId(request);
+
+    if (!userId) {
+      return response.status(401).json({ ok: false, error: 'User id is required for notifications.' });
+    }
+
+    const sessionUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!sessionUser) {
+      return response.status(404).json({ ok: false, error: 'Notification user was not found.' });
+    }
+
+    const notifications = await getNotificationsForUser(sessionUser);
+
+    return response.json({
+      ok: true,
+      notifications,
+      count: notifications.length,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.get('/api/services', async (request, response, next) => {
   try {
     const services = await prisma.service.findMany({
@@ -1088,6 +1116,209 @@ function getActorUserId(request) {
     request.query?.actorUserId ||
     ''
   ).trim();
+}
+
+async function getNotificationsForUser(user) {
+  const notifications = [];
+
+  const userOrders = await prisma.order.findMany({
+    where: {
+      OR: [
+        { buyerId: user.id },
+        { sellerId: user.id },
+      ],
+    },
+    include: ORDER_INCLUDE,
+    orderBy: { updatedAt: 'desc' },
+  });
+
+  for (const order of userOrders) {
+    const serviceTitle = order.service?.title || 'this order';
+
+    if (order.buyerId === user.id) {
+      if (order.status === ORDER_STATUS.PENDING_PAYMENT) {
+        notifications.push(createNotification({
+          id: `buyer-pay-deposit-${order.id}`,
+          type: 'buyer_payment_due',
+          title: 'Order accepted by seller',
+          message: `The seller accepted ${serviceTitle}.`,
+          targetType: 'order',
+          targetId: order.id,
+          actionLabel: 'Pay deposit',
+          severity: 'warning',
+        }));
+      }
+
+      if (order.status === ORDER_STATUS.DELIVERED) {
+        notifications.push(createNotification({
+          id: `buyer-review-delivery-${order.id}`,
+          type: 'buyer_delivery_ready',
+          title: 'Order delivered',
+          message: `Review the delivery for ${serviceTitle}.`,
+          targetType: 'order',
+          targetId: order.id,
+          actionLabel: 'Pay remaining / review delivery',
+          severity: calculateRemainingPi(order) > 0 ? 'warning' : 'info',
+        }));
+      }
+
+      if (order.status === ORDER_STATUS.REFUNDED) {
+        notifications.push(createNotification({
+          id: `buyer-dispute-result-${order.id}`,
+          type: 'buyer_dispute_resolved',
+          title: 'Dispute resolved',
+          message: `Check the dispute result for ${serviceTitle}.`,
+          targetType: 'order',
+          targetId: order.id,
+          actionLabel: 'Check dispute result',
+          severity: 'info',
+        }));
+      }
+    }
+
+    if (order.sellerId === user.id) {
+      if (order.status === ORDER_STATUS.REQUESTED) {
+        notifications.push(createNotification({
+          id: `seller-new-request-${order.id}`,
+          type: 'seller_order_requested',
+          title: 'New order requested',
+          message: `A buyer requested ${serviceTitle}.`,
+          targetType: 'order',
+          targetId: order.id,
+          actionLabel: 'Accept or reject order',
+          severity: 'warning',
+        }));
+      }
+
+      if ([ORDER_STATUS.DEPOSIT_PAID, ORDER_STATUS.PAID].includes(order.status)) {
+        notifications.push(createNotification({
+          id: `seller-start-work-${order.id}`,
+          type: 'seller_deposit_paid',
+          title: 'Deposit paid',
+          message: `${serviceTitle} is ready to start.`,
+          targetType: 'order',
+          targetId: order.id,
+          actionLabel: 'Start work',
+          severity: 'warning',
+        }));
+      }
+
+      if (order.status === ORDER_STATUS.COMPLETED) {
+        notifications.push(createNotification({
+          id: `seller-order-completed-${order.id}`,
+          type: 'seller_order_completed',
+          title: 'Buyer completed payment',
+          message: `${serviceTitle} is complete.`,
+          targetType: 'order',
+          targetId: order.id,
+          actionLabel: 'Order completed',
+          severity: 'success',
+        }));
+      }
+
+      if (order.status === ORDER_STATUS.DISPUTED) {
+        notifications.push(createNotification({
+          id: `seller-dispute-open-${order.id}`,
+          type: 'seller_dispute_opened',
+          title: 'Dispute opened',
+          message: `${serviceTitle} is under admin review.`,
+          targetType: 'order',
+          targetId: order.id,
+          actionLabel: 'Respond / wait for admin',
+          severity: 'danger',
+        }));
+      }
+    }
+  }
+
+  if (user.role === 'admin') {
+    notifications.push(...await getAdminNotifications());
+  }
+
+  return notifications;
+}
+
+async function getAdminNotifications() {
+  const notifications = [];
+
+  const [pendingServices, openReports, disputedOrders, sellersAwaitingVerification] = await Promise.all([
+    prisma.service.count({ where: { status: 'pending' } }),
+    prisma.report.count({ where: { status: 'open' } }),
+    prisma.order.count({ where: { status: ORDER_STATUS.DISPUTED } }),
+    prisma.user.count({
+      where: {
+        sellerStatus: 'unverified',
+        services: { some: { status: { not: 'removed' } } },
+      },
+    }),
+  ]);
+
+  if (pendingServices > 0) {
+    notifications.push(createNotification({
+      id: 'admin-pending-services',
+      type: 'admin_pending_services',
+      title: 'Pending services',
+      message: `${pendingServices} service listing needs review.`,
+      targetType: 'admin',
+      targetId: 'services',
+      actionLabel: 'Review services',
+      severity: 'warning',
+    }));
+  }
+
+  if (openReports > 0) {
+    notifications.push(createNotification({
+      id: 'admin-open-reports',
+      type: 'admin_pending_reports',
+      title: 'Pending reports',
+      message: `${openReports} report needs moderation.`,
+      targetType: 'admin',
+      targetId: 'reports',
+      actionLabel: 'Resolve reports',
+      severity: 'danger',
+    }));
+  }
+
+  if (disputedOrders > 0) {
+    notifications.push(createNotification({
+      id: 'admin-disputed-orders',
+      type: 'admin_pending_disputes',
+      title: 'Pending disputes',
+      message: `${disputedOrders} disputed order needs a decision.`,
+      targetType: 'admin',
+      targetId: 'orders',
+      actionLabel: 'Resolve reports',
+      severity: 'danger',
+    }));
+  }
+
+  if (sellersAwaitingVerification > 0) {
+    notifications.push(createNotification({
+      id: 'admin-seller-verification',
+      type: 'admin_sellers_awaiting_verification',
+      title: 'Sellers awaiting verification',
+      message: `${sellersAwaitingVerification} seller profile needs review.`,
+      targetType: 'admin',
+      targetId: 'services',
+      actionLabel: 'Review sellers',
+      severity: 'info',
+    }));
+  }
+
+  return notifications;
+}
+
+function createNotification({ id, type, title, message, targetType, targetId, actionLabel, severity }) {
+  return {
+    id,
+    type,
+    title,
+    message,
+    targetType,
+    targetId,
+    actionLabel,
+    severity,
+  };
 }
 
 function serializeUser(user) {

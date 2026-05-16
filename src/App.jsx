@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -40,6 +40,7 @@ import {
   createService as createServiceApi,
   deliverOrder as deliverOrderApi,
   disputeOrder as disputeOrderApi,
+  fetchNotifications as fetchNotificationsApi,
   fetchMarketplaceData,
   removeServiceById,
   refundOrder as refundOrderApi,
@@ -164,6 +165,11 @@ function App() {
   const [flowNotice, setFlowNotice] = useState('');
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
   const [marketplaceError, setMarketplaceError] = useState('');
+  const [appRefreshing, setAppRefreshing] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [autoAuthAttempted, setAutoAuthAttempted] = useState(false);
   const piIntegrationStatus = getPiIntegrationStatus();
   const appDirection = isRtlLanguage(language) ? 'rtl' : 'ltr';
@@ -177,35 +183,79 @@ function App() {
     document.documentElement.dir = appDirection;
   }, [appDirection, language]);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadMarketplace() {
-      try {
+  const refreshAppData = useCallback(async ({ showRefreshIndicator = false, shouldApply = () => true } = {}) => {
+    try {
+      if (showRefreshIndicator) {
+        setAppRefreshing(true);
+      } else {
         setMarketplaceLoading(true);
-        const data = await fetchMarketplaceData();
-        if (!isMounted) return;
+      }
 
-        setServices(data.services);
-        setOrders(data.orders);
-        setReports(data.reports);
-        setMarketplaceError('');
-      } catch (error) {
-        if (!isMounted) return;
+      const data = await fetchMarketplaceData();
+      if (!shouldApply()) return data;
+
+      setServices(data.services);
+      setOrders(data.orders);
+      setReports(data.reports);
+      setMarketplaceError('');
+      return data;
+    } catch (error) {
+      if (shouldApply()) {
         setMarketplaceError(getErrorMessage(error, 'Could not load marketplace data from the backend.'));
-      } finally {
-        if (isMounted) {
+      }
+      return null;
+    } finally {
+      if (shouldApply()) {
+        if (showRefreshIndicator) {
+          setAppRefreshing(false);
+        } else {
           setMarketplaceLoading(false);
         }
       }
     }
+  }, []);
 
-    loadMarketplace();
+  const refreshNotifications = useCallback(async (actor) => {
+    if (!actor?.uid) {
+      setNotifications([]);
+      setNotificationCount(0);
+      return;
+    }
+
+    try {
+      setNotificationsLoading(true);
+      const data = await fetchNotificationsApi(actor);
+      setNotifications(data.notifications);
+      setNotificationCount(data.count);
+    } catch (error) {
+      console.error('Notifications could not be loaded.', error);
+      setNotifications([]);
+      setNotificationCount(0);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    refreshAppData({ shouldApply: () => isMounted });
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [refreshAppData]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setNotifications([]);
+      setNotificationCount(0);
+      setNotificationsOpen(false);
+      return;
+    }
+
+    refreshNotifications(user);
+  }, [refreshNotifications, user]);
 
   const approvedServices = useMemo(
     () => services.filter((service) => service.status === 'approved' && service.sellerStatus !== 'blocked'),
@@ -254,6 +304,40 @@ function App() {
   const isInitialMarketplaceLoading =
     marketplaceLoading && services.length === 0 && orders.length === 0 && reports.length === 0;
 
+  async function handleLogoRefresh() {
+    await refreshAppData({ showRefreshIndicator: true });
+    if (user) {
+      await refreshNotifications(user);
+    }
+  }
+
+  function handleNotificationClick(notification) {
+    setNotificationsOpen(false);
+
+    if (notification.targetType === 'order') {
+      const targetOrder = orders.find((order) => order.id === notification.targetId);
+      setOrderTab(targetOrder?.sellerId === currentUserId ? 'seller' : 'buyer');
+      setActiveView('orders');
+      return;
+    }
+
+    if (notification.targetType === 'admin') {
+      if (notification.targetId === 'reports') {
+        setAdminTab('reports');
+      } else if (notification.targetId === 'orders') {
+        setAdminTab('orders');
+      } else {
+        setAdminTab('services');
+      }
+      setActiveView('admin');
+      return;
+    }
+
+    if (notification.targetType === 'service' && notification.targetId) {
+      openService(notification.targetId);
+    }
+  }
+
   function replaceOrder(updatedOrder) {
     setOrders((current) => {
       const exists = current.some((order) => order.id === updatedOrder.id);
@@ -300,6 +384,7 @@ function App() {
       }
       setFlowError('');
       setFlowNotice(`Connected as ${sessionUser.username}.`);
+      void refreshNotifications(sessionUser);
       return sessionUser;
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Pi login failed. Open in Pi Browser or check the official Pi SDK setup.'));
@@ -358,6 +443,8 @@ function App() {
     if (targetMode === 'Admin' && nextUser.appRole === 'admin') {
       setActiveView('admin');
     }
+
+    void refreshNotifications(nextUser);
   }
 
   function openService(serviceId) {
@@ -410,6 +497,7 @@ function App() {
       if (isAdmin) {
         setAdminTab('services');
       }
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Service could not be submitted to the backend.'));
       setFlowNotice('');
@@ -452,6 +540,7 @@ function App() {
       setOrders((current) => [createdOrder, ...current.filter((item) => item.id !== createdOrder.id)]);
       setRequestNote('');
       setRequestAsset(blankRequestAsset);
+      void refreshNotifications(buyer);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Order could not be created on the backend.'));
       setFlowNotice('');
@@ -524,6 +613,7 @@ function App() {
         item.id === orderId ? { ...paymentResult.order, payment: paymentResult.payment } : item,
       ),
     );
+    void refreshNotifications(user);
   }
 
   async function handleAcceptOrder(orderId) {
@@ -532,6 +622,7 @@ function App() {
       setFlowNotice('Request accepted. Buyer can pay the deposit now.');
       setFlowError('');
       replaceOrder(updatedOrder);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Order request could not be accepted.'));
       setFlowNotice('');
@@ -544,6 +635,7 @@ function App() {
       setFlowNotice('Order moved to In Progress.');
       setFlowError('');
       replaceOrder(updatedOrder);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Order could not be moved to In Progress.'));
       setFlowNotice('');
@@ -578,6 +670,7 @@ function App() {
       setFlowNotice('Delivery submitted. Waiting for buyer confirmation.');
       setFlowError('');
       replaceOrder(updatedOrder);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Delivery could not be submitted to the backend.'));
       setFlowNotice('');
@@ -606,6 +699,7 @@ function App() {
     }
 
     setFlowNotice('Delivery confirmed and fully paid. You can rate the seller now.');
+    void refreshNotifications(user);
   }
 
   async function handleRateOrder(orderId, rating) {
@@ -614,6 +708,7 @@ function App() {
       setFlowNotice(`Seller rated ${rating} stars.`);
       setFlowError('');
       replaceOrder(updatedOrder);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Seller rating could not be saved.'));
       setFlowNotice('');
@@ -626,6 +721,7 @@ function App() {
       setFlowNotice('Order cancelled.');
       setFlowError('');
       replaceOrder(updatedOrder);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Order could not be cancelled.'));
       setFlowNotice('');
@@ -638,6 +734,7 @@ function App() {
       setFlowNotice('Order marked as disputed for admin review.');
       setFlowError('');
       replaceOrder(updatedOrder);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Order could not be marked as disputed.'));
       setFlowNotice('');
@@ -650,6 +747,7 @@ function App() {
       setFlowNotice(`Service ${nextStatus}.`);
       setFlowError('');
       replaceService(updatedService);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Service moderation change could not be saved.'));
       setFlowNotice('');
@@ -666,6 +764,7 @@ function App() {
           service.sellerId === sellerId ? { ...service, sellerStatus } : service,
         ),
       );
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Seller status could not be updated.'));
       setFlowNotice('');
@@ -678,6 +777,7 @@ function App() {
       setFlowNotice('Service removed from moderation.');
       setFlowError('');
       setServices((current) => current.filter((service) => service.id !== serviceId));
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Service could not be removed.'));
       setFlowNotice('');
@@ -696,6 +796,7 @@ function App() {
       setFlowNotice('Report sent to admin moderation.');
       setFlowError('');
       setReports((current) => [report, ...current.filter((item) => item.id !== report.id)]);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Report could not be sent to admin moderation.'));
       setFlowNotice('');
@@ -708,6 +809,7 @@ function App() {
       setFlowNotice('Report resolved.');
       setFlowError('');
       replaceReport(report);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Report could not be resolved.'));
       setFlowNotice('');
@@ -720,6 +822,7 @@ function App() {
       setFlowNotice('Dispute resolved: buyer refund recorded.');
       setFlowError('');
       replaceOrder(updatedOrder);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Order could not be marked refunded.'));
       setFlowNotice('');
@@ -732,6 +835,7 @@ function App() {
       setFlowNotice('Dispute resolved: order released to seller.');
       setFlowError('');
       replaceOrder(updatedOrder);
+      void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Order could not be released to seller.'));
       setFlowNotice('');
@@ -743,14 +847,26 @@ function App() {
       <Localized>
         <div className="app-shell" lang={language} dir={appDirection}>
       <header className="top-bar">
-        <button className="brand-button" onClick={() => setActiveView('home')} aria-label="PiDeal home">
+        <button
+          className={appRefreshing ? 'brand-button is-refreshing' : 'brand-button'}
+          onClick={handleLogoRefresh}
+          aria-label="Refresh PiDeal"
+          aria-busy={appRefreshing}
+        >
           <img className="brand-logo" src="/pideal-logo.svg" alt="" />
+          {appRefreshing && <span className="refresh-spinner" aria-hidden="true" />}
         </button>
         <div className="top-actions">
           <LanguageSwitch language={language} onLanguageChange={setLanguage} />
-          <button className="icon-button" aria-label="Notifications">
-            <Bell size={19} />
-          </button>
+          <NotificationCenter
+            user={user}
+            notifications={notifications}
+            count={notificationCount}
+            isOpen={notificationsOpen}
+            isLoading={notificationsLoading}
+            onToggle={() => setNotificationsOpen((current) => !current)}
+            onNotificationClick={handleNotificationClick}
+          />
         </div>
       </header>
 
@@ -896,6 +1012,64 @@ function LanguageSwitch({ language, onLanguageChange }) {
         <option value="ar">Arabic</option>
       </select>
     </label>
+    </Localized>
+  );
+}
+
+function NotificationCenter({
+  user,
+  notifications,
+  count,
+  isOpen,
+  isLoading,
+  onToggle,
+  onNotificationClick,
+}) {
+  return (
+    <Localized>
+    <div className="notification-center">
+      <button
+        className="icon-button notification-button"
+        aria-label="Notifications"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onClick={onToggle}
+      >
+        <Bell size={19} />
+        {count > 0 && <span className="notification-badge">{count > 9 ? '9+' : count}</span>}
+      </button>
+
+      {isOpen && (
+        <div className="notification-menu" role="menu">
+          <div className="notification-menu-header">
+            <strong>Action center</strong>
+            <span>{isLoading ? 'Loading' : <><span>Pending actions</span>: {count}</>}</span>
+          </div>
+
+          {!user && <p className="notification-empty">Login to see actions.</p>}
+
+          {user && !isLoading && notifications.length === 0 && (
+            <p className="notification-empty">No pending actions.</p>
+          )}
+
+          {user && notifications.map((notification) => (
+            <button
+              key={notification.id}
+              className={`notification-item ${notification.severity || 'info'}`}
+              type="button"
+              role="menuitem"
+              onClick={() => onNotificationClick(notification)}
+            >
+              <span>
+                <strong>{notification.title}</strong>
+                <small>{notification.message}</small>
+              </span>
+              <em>{notification.actionLabel}</em>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
     </Localized>
   );
 }

@@ -119,6 +119,7 @@ select:focus-visible {
 
 .brand-button {
   display: inline-flex;
+  position: relative;
   align-items: center;
   min-width: 0;
   padding: 0;
@@ -128,12 +129,28 @@ select:focus-visible {
   cursor: pointer;
 }
 
+.brand-button.is-refreshing .brand-logo {
+  opacity: 0.62;
+}
+
 .brand-logo {
   display: block;
   width: clamp(166px, 52vw, 216px);
   height: 82px;
   flex: 0 0 auto;
   object-fit: contain;
+}
+
+.refresh-spinner {
+  position: absolute;
+  inset-inline-end: 10px;
+  bottom: 12px;
+  width: 18px;
+  height: 18px;
+  border: 3px solid rgba(123, 79, 215, 0.2);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 780ms linear infinite;
 }
 
 .icon-button,
@@ -155,6 +172,131 @@ select:focus-visible {
   background: rgba(255, 255, 255, 0.82);
 }
 
+.notification-center {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.notification-button {
+  position: relative;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -5px;
+  inset-inline-end: -5px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--red);
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 15px;
+  text-align: center;
+}
+
+.notification-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline-end: 0;
+  display: grid;
+  width: min(82vw, 340px);
+  max-height: 430px;
+  gap: 8px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 42px rgba(23, 32, 42, 0.16);
+}
+
+.notification-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.notification-menu-header strong {
+  font-size: 0.92rem;
+}
+
+.notification-menu-header span,
+.notification-empty {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.notification-empty {
+  margin: 0;
+  padding: 10px 4px;
+}
+
+.notification-item {
+  display: grid;
+  width: 100%;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-inline-start: 4px solid var(--brand);
+  border-radius: 8px;
+  color: var(--ink);
+  text-align: left;
+  background: #fff;
+  cursor: pointer;
+}
+
+.notification-item.warning {
+  border-inline-start-color: var(--amber);
+}
+
+.notification-item.success {
+  border-inline-start-color: var(--green);
+}
+
+.notification-item.danger {
+  border-inline-start-color: var(--red);
+}
+
+.notification-item strong,
+.notification-item small,
+.notification-item em {
+  display: block;
+}
+
+.notification-item strong {
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
+.notification-item small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.notification-item em {
+  color: var(--brand-dark);
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .app-shell[dir='rtl'] {
   direction: rtl;
 }
@@ -166,6 +308,10 @@ select:focus-visible {
 .app-shell[dir='rtl'] .profile-service-row,
 .app-shell[dir='rtl'] .admin-service-title,
 .app-shell[dir='rtl'] .order-title {
+  text-align: right;
+}
+
+.app-shell[dir='rtl'] .notification-item {
   text-align: right;
 }
 

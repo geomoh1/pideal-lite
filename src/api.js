@@ -64,6 +64,17 @@ export async function fetchMarketplaceData() {
   };
 }
 
+export async function fetchNotifications(actor) {
+  const data = await requestJson('/api/notifications', {
+    headers: actorHeaders(actor),
+  });
+
+  return {
+    notifications: data.notifications || [],
+    count: data.count || 0,
+  };
+}
+
 export async function syncUserSession(user) {
   const sessionPayload =
     user.authProvider === 'pi-sdk'

@@ -144,6 +144,11 @@ try {
   });
 
   assertEqual(createdService.service.status, 'pending', 'New services must start pending.');
+  const adminNotifications = await getJson('/api/notifications', { actorUserId: 'admin-lina' });
+  assertTruthy(
+    adminNotifications.notifications.some((notification) => notification.type === 'admin_pending_services'),
+    'Admin must see pending service notifications.',
+  );
   await expectCorsPreflight(`/api/services/${serviceId}/status`);
 
   const rejectedModeration = await postJsonExpectFailure(`/api/services/${serviceId}/status`, { status: 'approved' });
@@ -220,6 +225,43 @@ try {
   const orderId = createdOrder.order.id;
   assertEqual(createdOrder.order.status, 'Requested', 'New orders must start as seller-review requests.');
   assertEqual(createdOrder.order.requestFileName, 'smoke-reference.png', 'Order request metadata must persist.');
+  const sellerNotifications = await getJson('/api/notifications', { actorUserId: 'smoke-seller' });
+  assertTruthy(
+    sellerNotifications.notifications.some(
+      (notification) =>
+        notification.type === 'seller_order_requested' &&
+        notification.targetType === 'order' &&
+        notification.targetId === orderId,
+    ),
+    'Seller must see requested order notifications for their own orders.',
+  );
+
+  await prisma.user.upsert({
+    where: { id: 'unrelated-buyer' },
+    update: { username: 'unrelated.buyer' },
+    create: { id: 'unrelated-buyer', username: 'unrelated.buyer', role: 'user' },
+  });
+
+  const unrelatedOrder = await prisma.order.create({
+    data: {
+      id: `smoke-unrelated-${startedAt}`,
+      serviceId,
+      buyerId: 'unrelated-buyer',
+      sellerId: 'smoke-seller',
+      buyerName: 'unrelated.buyer',
+      sellerName: 'smoke.seller',
+      status: 'Delivered',
+      buyerNote: 'This order must not appear in smoke-buyer notifications.',
+      deliveryMessage: 'Unrelated delivery.',
+      deliveryLink: 'https://www.dropbox.com/s/unrelated-delivery.zip',
+    },
+  });
+
+  const unrelatedViewerNotifications = await getJson('/api/notifications', { actorUserId: 'smoke-buyer' });
+  assertTruthy(
+    !unrelatedViewerNotifications.notifications.some((notification) => notification.targetId === unrelatedOrder.id),
+    'Users must not see notifications for unrelated orders.',
+  );
 
   const rejectedShortReference = await postJsonExpectFailure('/api/orders', {
     serviceId,
@@ -307,6 +349,16 @@ try {
   });
   assertEqual(delivered.order.status, 'Delivered', 'Seller delivery must move order to Delivered.');
   assertEqual(delivered.order.deliveryFileName, 'smoke-delivery.zip', 'Delivery metadata must persist.');
+  const buyerNotifications = await getJson('/api/notifications', { actorUserId: 'smoke-buyer' });
+  assertTruthy(
+    buyerNotifications.notifications.some(
+      (notification) =>
+        notification.type === 'buyer_delivery_ready' &&
+        notification.targetType === 'order' &&
+        notification.targetId === orderId,
+    ),
+    'Buyer must see delivered order notifications for their own orders.',
+  );
 
   const rejectedConfirm = await postJsonExpectFailure(`/api/orders/${orderId}/confirm`, {});
   assertEqual(rejectedConfirm.status, 409, 'Buyer confirmation must not complete the order while balance is due.');
@@ -451,8 +503,12 @@ async function waitForHealth() {
   throw new Error(`Backend did not become ready.\nstdout:\n${serverOutput}\nstderr:\n${serverError}`);
 }
 
-async function getJson(path) {
-  const response = await fetch(`${baseUrl}${path}`);
+async function getJson(path, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: {
+      ...(options.actorUserId ? { 'X-PiDeal-User-Id': options.actorUserId } : {}),
+    },
+  });
   return parseResponse(response);
 }
 
@@ -601,6 +657,17 @@ async function cleanupSmokeData() {
     where: { id: smokeServiceFilter },
   });
   await prisma.user.deleteMany({
-    where: { id: { in: ['smoke-buyer', 'smoke-seller', 'verified-user', 'verified-admin', 'verified-mohammed'] } },
+    where: {
+      id: {
+        in: [
+          'smoke-buyer',
+          'smoke-seller',
+          'unrelated-buyer',
+          'verified-user',
+          'verified-admin',
+          'verified-mohammed',
+        ],
+      },
+    },
   });
 }
