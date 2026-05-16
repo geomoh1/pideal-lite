@@ -10,6 +10,11 @@ const balancePaymentId = `smoke-payment-${startedAt}-balance`;
 const serviceId = `smoke-service-${startedAt}`;
 const depositTxid = `smoke-tx-${startedAt}-deposit`;
 const balanceTxid = `smoke-tx-${startedAt}-balance`;
+
+if (!/^postgres(?:ql)?:\/\//i.test(String(process.env.DATABASE_URL || ''))) {
+  throw new Error('DATABASE_URL must point to PostgreSQL before running npm run test:backend.');
+}
+
 const prisma = new PrismaClient();
 const piApiServer = createPiApiMockServer();
 
@@ -28,7 +33,7 @@ const server = spawn(process.execPath, ['server/index.js'], {
     PI_USE_MOCK_PAYMENTS: 'false',
     PI_ADMIN_USERNAMES: 'mohammedabobaker',
     PLATFORM_FEE_RATE: '0.03',
-    DATABASE_URL: process.env.DATABASE_URL || 'file:./dev.db',
+    DATABASE_URL: process.env.DATABASE_URL,
   },
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,

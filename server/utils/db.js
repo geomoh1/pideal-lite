@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 
-process.env.DATABASE_URL ||= 'file:./dev.db';
+if (!/^postgres(?:ql)?:\/\//i.test(String(process.env.DATABASE_URL || ''))) {
+  throw new Error('DATABASE_URL must be set to a PostgreSQL URL before starting the backend.');
+}
 
 export const prisma = new PrismaClient();
 

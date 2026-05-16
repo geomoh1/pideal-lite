@@ -4,7 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PrismaClient } from '@prisma/client';
 
-process.env.DATABASE_URL ||= 'file:./dev.db';
+if (!/^postgres(?:ql)?:\/\//i.test(String(process.env.DATABASE_URL || ''))) {
+  throw new Error('DATABASE_URL must be set to a PostgreSQL URL before running prisma:apply.');
+}
 
 const prisma = new PrismaClient();
 const currentFile = fileURLToPath(import.meta.url);

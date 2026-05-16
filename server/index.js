@@ -75,7 +75,7 @@ app.get('/api/health', async (request, response, next) => {
     return response.json({
       ok: true,
       service: 'pideal-lite-api',
-      database: 'sqlite-prisma',
+      database: 'postgresql-prisma',
       piPaymentsMode: USE_MOCK_PAYMENTS ? 'mock' : 'pi-platform-api',
       platformFeeRate: getPlatformFeeRate(),
       platformFeePercent: getPlatformFeePercentLabel(),

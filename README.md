@@ -11,7 +11,7 @@ PiDeal Lite is a mobile-first React marketplace for Pi Browser where Pi Network 
 - Service detail and buyer request flow
 - Pi payment creation through the official Pi SDK when available, with local fallback for development
 - Minimal Node/Express backend for Pi payment approval and completion
-- SQLite persistence through Prisma for users, services, orders, payments, reviews, and reports
+- PostgreSQL persistence through Prisma for users, services, orders, payments, reviews, and reports
 - API-driven frontend state for services, orders, delivery, reviews, and reports
 - Loading and error states for backend API calls
 - Arabic/English UI with automatic device-language detection and a user language switcher
@@ -110,7 +110,7 @@ The MVP now captures the digital handoff needed for services such as logo refere
 - Seller delivery link
 - Seller delivery file selection shown as file name and size
 
-Current demo mode records file metadata only. It does not upload or store binary files yet. Before public production, add a dedicated upload endpoint and object storage such as S3, Cloudflare R2, Supabase Storage, or another persistent file store. Keep SQLite for metadata only, not file blobs.
+Current demo mode records file metadata only. It does not upload or store binary files yet. Before public production, add a dedicated upload endpoint and object storage such as S3, Cloudflare R2, Supabase Storage, or another persistent file store. Keep PostgreSQL for metadata only, not file blobs.
 
 ## Pi SDK integration
 
@@ -135,7 +135,7 @@ Important: official Pi payments require server-side approval and server-side com
 
 ## Backend API
 
-The backend is intentionally small. It supports the Pi payment lifecycle and now serves the marketplace state from SQLite through Prisma. React no longer depends on local `initialServices` or `initialOrders`; it loads services, orders, and reports through REST APIs.
+The backend is intentionally small. It supports the Pi payment lifecycle and now serves the marketplace state from PostgreSQL through Prisma. React no longer depends on local `initialServices` or `initialOrders`; it loads services, orders, and reports through REST APIs.
 
 Endpoints:
 
@@ -182,7 +182,7 @@ Backend `.env` values:
 
 ```text
 PORT=4000
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE"
 PI_API_BASE_URL=https://api.minepi.com/v2
 PI_NETWORK_API_KEY=
 PI_API_KEY=
@@ -217,7 +217,7 @@ npm run prisma:apply
 npm run prisma:seed
 ```
 
-The default SQLite database path is `prisma/dev.db`. It is ignored by git. The schema and migration files are committed so the same structure can be recreated on another machine. `npm run prisma:apply` applies committed SQL migrations in order and tolerates already-applied columns for simple deployment reruns. Use `npm run prisma:migrate -- --name <name>` when adding future migrations.
+Set `DATABASE_URL` to a PostgreSQL connection string before running database commands. The schema and migration files are committed so the same structure can be recreated on another machine. `npm run prisma:apply` applies committed SQL migrations in order and tolerates already-applied columns for simple deployment reruns. Use `npm run prisma:migrate -- --name <name>` when adding future migrations.
 
 Development:
 
@@ -270,10 +270,10 @@ Admin moderation is controlled by the backend database, not by the mode switcher
 To make a real Pi user an admin after their first login creates a `User` row, either add the verified Pi username to `PI_ADMIN_USERNAMES` before login or update that user's role in the production database:
 
 ```sql
-UPDATE User SET role = 'admin' WHERE id = '<real-pi-user-uid>';
+UPDATE "User" SET role = 'admin' WHERE id = '<real-pi-user-uid>';
 ```
 
-For SQLite local testing, you can run the same SQL against `prisma/dev.db` with your preferred SQLite tool. In production, do this in the managed database/admin console. Real Pi sessions now verify the Pi access token before creating/finding the user. The temporary `X-PiDeal-User-Id` admin header is still an MVP fallback for moderation calls and should be replaced with a backend-issued session token before a public launch.
+For local testing, run the same SQL against your configured PostgreSQL database. In production, do this in the managed database/admin console. Real Pi sessions now verify the Pi access token before creating/finding the user. The temporary `X-PiDeal-User-Id` admin header is still an MVP fallback for moderation calls and should be replaced with a backend-issued session token before a public launch.
 
 Backend smoke test:
 
@@ -306,11 +306,10 @@ Backend on Render or Railway:
 - Set `FRONTEND_ORIGIN` to the Vercel or Netlify production URL. Add extra domains to `FRONTEND_ORIGINS` as needed.
 - The backend must be served over HTTPS because the Pi Browser and payment callbacks should not rely on insecure origins.
 
-SQLite production limitation:
+PostgreSQL persistence:
 
-- SQLite is acceptable for a small closed beta only if the backend host provides a persistent disk or volume.
-- If the host filesystem is ephemeral, `prisma/dev.db` can be lost on redeploy or restart.
-- For a broader public beta, move the same Prisma models to PostgreSQL and use managed database backups.
+- Use a managed PostgreSQL database for Render/Railway deployments.
+- Keep regular database backups enabled before a public beta.
 - Confirm persistence by creating a paid mock order, restarting the backend, and checking `GET /api/orders/:orderId/status`.
 
 ## Pi Browser production checklist
@@ -335,7 +334,7 @@ SQLite production limitation:
 - Confirm database persistence survives backend restart or redeploy.
 - Confirm backend server-side approval and completion are configured before treating real Pi payments as settled.
 - Confirm backend payment approval and completion endpoints are tested against the deployed backend.
-- Confirm SQLite migrations have run before backend startup.
+- Confirm PostgreSQL migrations have run before backend startup.
 - Keep all future Pi auth/payment changes inside `src/piPlaceholders.js`.
 - Verify Pi auth, deposit creation, cancellation, completion, and error states inside Pi Browser after SDK integration.
 - Verify `GET /api/orders/:orderId/status` returns `Paid` only after successful completion.

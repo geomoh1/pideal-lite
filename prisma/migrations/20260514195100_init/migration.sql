@@ -3,8 +3,8 @@ CREATE TABLE IF NOT EXISTS "User" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "username" TEXT NOT NULL,
     "role" TEXT NOT NULL DEFAULT 'user',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -13,21 +13,21 @@ CREATE TABLE IF NOT EXISTS "Service" (
     "title" TEXT NOT NULL,
     "category" TEXT NOT NULL,
     "summary" TEXT,
-    "pricePi" REAL NOT NULL DEFAULT 0,
-    "depositPi" REAL NOT NULL DEFAULT 0,
+    "pricePi" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "depositPi" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "deliveryDays" INTEGER NOT NULL DEFAULT 1,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "sellerId" TEXT NOT NULL,
     "sellerHandle" TEXT,
-    "rating" REAL,
+    "rating" DOUBLE PRECISION,
     "reviewCount" INTEGER NOT NULL DEFAULT 0,
     "accent" TEXT,
     "icon" TEXT,
     "featured" BOOLEAN NOT NULL DEFAULT false,
     "terms" TEXT,
     "deliverablesJson" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "Service_sellerId_fkey" FOREIGN KEY ("sellerId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
@@ -41,9 +41,9 @@ CREATE TABLE IF NOT EXISTS "Order" (
     "sellerName" TEXT,
     "status" TEXT NOT NULL DEFAULT 'Pending Payment',
     "paymentMode" TEXT,
-    "amountPi" REAL,
-    "platformFeePi" REAL,
-    "paidAt" DATETIME,
+    "amountPi" DOUBLE PRECISION,
+    "platformFeePi" DOUBLE PRECISION,
+    "paidAt" TIMESTAMP(3),
     "buyerNote" TEXT,
     "requestSourceText" TEXT,
     "requestReferenceLink" TEXT,
@@ -53,8 +53,8 @@ CREATE TABLE IF NOT EXISTS "Order" (
     "deliveryLink" TEXT,
     "deliveryFileName" TEXT,
     "deliveryFileSize" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "Order_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "Order_buyerId_fkey" FOREIGN KEY ("buyerId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "Order_sellerId_fkey" FOREIGN KEY ("sellerId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
@@ -65,14 +65,14 @@ CREATE TABLE IF NOT EXISTS "Payment" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "orderId" TEXT NOT NULL,
     "serviceId" TEXT,
-    "amountPi" REAL,
+    "amountPi" DOUBLE PRECISION,
     "mode" TEXT,
     "txid" TEXT,
     "status" TEXT NOT NULL DEFAULT 'approval_requested',
     "piPaymentJson" TEXT,
     "mock" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "Payment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS "Review" (
     "sellerId" TEXT,
     "rating" INTEGER NOT NULL,
     "comment" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Review_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT "Review_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "Review_buyerId_fkey" FOREIGN KEY ("buyerId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
@@ -100,8 +100,8 @@ CREATE TABLE IF NOT EXISTS "Report" (
     "serviceTitle" TEXT NOT NULL,
     "reason" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'open',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "Report_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "Report_reporterId_fkey" FOREIGN KEY ("reporterId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );

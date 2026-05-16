@@ -12,7 +12,10 @@ const prismaBin = path.join(
   process.platform === 'win32' ? 'prisma.cmd' : 'prisma',
 );
 
-process.env.DATABASE_URL ||= 'file:./dev.db';
+if (!isPostgresUrl(process.env.DATABASE_URL)) {
+  console.error('DATABASE_URL must be set to a PostgreSQL URL before running prisma:generate.');
+  process.exit(1);
+}
 
 const result = spawnSync(prismaBin, ['generate'], {
   cwd: projectRoot,
@@ -27,3 +30,7 @@ if (result.error) {
 }
 
 process.exit(result.status ?? 1);
+
+function isPostgresUrl(value) {
+  return /^postgres(?:ql)?:\/\//i.test(String(value || ''));
+}
