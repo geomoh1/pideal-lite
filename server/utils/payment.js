@@ -81,6 +81,7 @@ export function serializeService(service) {
 
   return {
     id: service.id,
+    slug: service.slug,
     title: service.title,
     category: service.category,
     sellerId: service.sellerId,
@@ -108,6 +109,49 @@ export function serializeService(service) {
       'Digital delivery message or link',
       'Buyer confirmation required',
       'Pi escrow payment',
+    ],
+  };
+}
+
+export function serializePublicService(service, stats = {}) {
+  if (!service) return null;
+
+  const reviewRecords = Array.isArray(service.reviews) ? service.reviews : [];
+  const reviewCount = service.reviewCount ?? service._count?.reviews ?? reviewRecords.length ?? 0;
+  const averageRating =
+    service.rating ??
+    (reviewRecords.length
+      ? Number((reviewRecords.reduce((sum, review) => sum + review.rating, 0) / reviewRecords.length).toFixed(1))
+      : 0);
+
+  return {
+    slug: service.slug,
+    title: service.title,
+    category: service.category,
+    summary: service.summary || '',
+    pricePi: service.pricePi,
+    depositPi: service.depositPi,
+    deliveryDays: service.deliveryDays,
+    rating: averageRating,
+    reviews: reviewCount,
+    completedOrders: stats.completedOrders || 0,
+    seller: {
+      displayName: service.seller?.username || 'Pi seller',
+      handle: service.sellerHandle || `@${service.seller?.username || 'seller'}`,
+      status: service.seller?.sellerStatus || 'unverified',
+    },
+    accent: service.accent || '#f5b84b',
+    icon: service.icon || service.category?.slice(0, 2).toUpperCase() || 'PI',
+    deliverables: parseJson(service.deliverablesJson) || [
+      'Digital delivery message or link',
+      'Buyer confirmation required',
+      'Pi escrow payment',
+    ],
+    trustMarkers: [
+      'Escrow protected',
+      'Verified Pi identity',
+      'Dispute resolution',
+      'Protected delivery',
     ],
   };
 }
