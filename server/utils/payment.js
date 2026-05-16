@@ -107,7 +107,7 @@ export function serializeService(service) {
     deliverables: parseJson(service.deliverablesJson) || [
       'Digital delivery message or link',
       'Buyer confirmation required',
-      'Pi payment placeholder',
+      'Pi escrow payment',
     ],
   };
 }

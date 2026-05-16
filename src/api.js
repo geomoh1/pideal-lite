@@ -78,17 +78,7 @@ export async function fetchNotifications(actor) {
 }
 
 export async function syncUserSession(user) {
-  const sessionPayload =
-    user.authProvider === 'pi-sdk'
-      ? { accessToken: user.accessToken }
-      : {
-          uid: user.uid,
-          username: user.username,
-          authProvider: user.authProvider,
-          demoMode: user.demoMode === true,
-        };
-
-  const data = await postJson('/api/session', sessionPayload);
+  const data = await postJson('/api/session', { accessToken: user.accessToken });
   return data.user;
 }
 

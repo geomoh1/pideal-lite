@@ -91,6 +91,9 @@ try {
   });
   assertEqual(invalidSession.status, 401, 'Invalid Pi access token must be rejected.');
 
+  const missingTokenSession = await postJsonExpectFailure('/api/session', {});
+  assertEqual(missingTokenSession.status, 401, 'Session creation must require a verified Pi access token.');
+
   const verifiedAdminSession = await postJson('/api/session', {
     accessToken: 'valid-admin-token',
   });
@@ -115,13 +118,6 @@ try {
     'admin',
     'Configured Pi admin username must receive role admin after token verification.',
   );
-
-  const demoAdminSession = await postJson('/api/session', {
-    uid: 'admin-lina',
-    username: 'lina.admin',
-    demoMode: true,
-  });
-  assertEqual(demoAdminSession.user.role, 'admin', 'Demo Admin session must resolve to admin in mock mode.');
 
   const createdService = await postJson('/api/services', {
     id: serviceId,
@@ -305,7 +301,7 @@ try {
 
   assertEqual(approval.order.status, 'Pending Payment', 'Approval must not mark order as Paid.');
   assertEqual(approval.payment.amountPi, 4, 'Server must calculate the deposit amount from the service.');
-  assertEqual(approval.mock, true, 'Demo approval must stay in mock mode.');
+  assertEqual(approval.mock, true, 'Mock approval must stay in mock mode.');
 
   const smokeUsers = await prisma.user.findMany({
     where: { id: { in: ['smoke-buyer', 'smoke-seller'] } },
@@ -335,7 +331,7 @@ try {
   assertEqual(completion.order.escrowStatus, 'holding_deposit', 'Deposit completion must hold funds in escrow.');
   assertEqual(completion.order.escrowHeldPi, 4, 'Escrow must hold the completed deposit amount.');
   assertEqual(completion.order.sellerPayoutPi, 0, 'Seller payout must not be available before full payment.');
-  assertEqual(completion.mock, true, 'Demo completion must stay in mock mode.');
+  assertEqual(completion.mock, true, 'Mock completion must stay in mock mode.');
 
   const started = await postJson(`/api/orders/${orderId}/start`, {});
   assertEqual(started.order.status, 'In Progress', 'Paid orders must be startable.');

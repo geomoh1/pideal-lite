@@ -65,14 +65,7 @@ const ar = {
   Arabic: 'العربية',
   'Buy and sell digital services with Pi.': 'اشترِ وبِع الخدمات الرقمية باستخدام Pi.',
   'Pi Browser ready': 'جاهز لـ Pi Browser',
-  'Demo/testing accounts - no Pi Browser required': 'حسابات تجربة واختبار - لا تحتاج Pi Browser',
-  'Demo testing accounts': 'حسابات التجربة',
-  'Demo browsing account. No Pi Browser required.': 'حساب تجربة للتصفح. لا تحتاج Pi Browser.',
-  'Demo selling account. Payments stay in mock mode.': 'حساب تجربة للبيع. تبقى المدفوعات في وضع المحاكاة.',
-  'Demo admin account for moderation testing.': 'حساب أدمن تجريبي لاختبار المراجعة.',
-  'Demo Browse': 'تجربة الشراء',
-  'Demo Sell': 'تجربة البيع',
-  'Demo Admin': 'تجربة الأدمن',
+  'Sign in with Pi Browser to buy, sell, and manage orders.': 'سجل الدخول عبر Pi Browser للشراء والبيع وإدارة الطلبات.',
   Connected: 'متصل',
   'Pi Login': 'دخول Pi',
   'Sign in with Pi': 'تسجيل الدخول بـ Pi',
@@ -236,8 +229,8 @@ const ar = {
   'Seller rating': 'تقييم البائع',
 
   'Pi user': 'مستخدم Pi',
-  'Login with the Pi placeholder to unlock mock buyer and seller data.':
-    'سجل الدخول عبر Pi placeholder لفتح بيانات الشراء والبيع التجريبية.',
+  'Sign in with Pi Browser to view your buyer and seller data.':
+    'سجل الدخول عبر Pi Browser لعرض بيانات الشراء والبيع الخاصة بك.',
   'Buyer orders': 'طلبات الشراء',
   'Seller orders': 'طلبات البيع',
   'Listed services': 'الخدمات المعروضة',
@@ -276,7 +269,7 @@ const ar = {
 
   'Digital delivery message or link': 'رسالة أو رابط تسليم رقمي',
   'Buyer confirmation required': 'تأكيد المشتري مطلوب',
-  'Pi payment placeholder': 'دفع Pi تجريبي',
+  'Pi escrow payment': 'دفع Pi عبر الضمان',
   'Minimal logo design sprint': 'تصميم شعار سريع وبسيط',
   'Clean logo concepts for Pi apps, shops, and community projects.':
     'أفكار شعارات نظيفة لتطبيقات Pi والمتاجر ومشاريع المجتمع.',
@@ -300,20 +293,12 @@ const arPatterns = [
     render: ([, username, mode]) => `تم تسجيل الدخول باسم ${username}. الوضع الحالي: ${translateText(mode, 'ar')}.`,
   },
   {
-    pattern: /^Testing as (.+)\. Active mode: (.+)\.$/,
-    render: ([, username, mode]) => `تجربة باسم ${username}. الوضع الحالي: ${translateText(mode, 'ar')}.`,
-  },
-  {
-    pattern: /^Use Pi Login when available, or choose a demo account for testing\. Mode: (.+)\.$/,
-    render: ([, mode]) => `استخدم دخول Pi عند توفره، أو اختر حسابًا تجريبيًا للاختبار. الوضع: ${mode}.`,
+    pattern: /^Sign in with Pi Browser to buy, sell, and manage orders\. Mode: (.+)\.$/,
+    render: ([, mode]) => `سجل الدخول عبر Pi Browser للشراء والبيع وإدارة الطلبات. الوضع: ${mode}.`,
   },
   {
     pattern: /^Connected as (.+)\.$/,
     render: ([, username]) => `تم الاتصال باسم ${username}.`,
-  },
-  {
-    pattern: /^Demo account active: (.+)\.$/,
-    render: ([, username]) => `الحساب التجريبي نشط: ${username}.`,
   },
   {
     pattern: /^Seller rated ([1-5]) stars\.$/,

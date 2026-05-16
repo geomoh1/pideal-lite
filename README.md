@@ -4,12 +4,12 @@ PiDeal Lite is a mobile-first React marketplace for Pi Browser where Pi Network 
 
 ## Included
 
-- Pi user login through the official Pi SDK when available, with local fallback for development
+- Pi user login through the official Pi SDK
 - Home page with search, categories, featured services, and latest services
 - Browse approved digital services
 - Add a service listing with title, category, Pi price, delivery time, icon, summary, and terms
 - Service detail and buyer request flow
-- Pi payment creation through the official Pi SDK when available, with local fallback for development
+- Pi payment creation through the official Pi SDK
 - Minimal Node/Express backend for Pi payment approval and completion
 - PostgreSQL persistence through Prisma for users, services, orders, payments, reviews, and reports
 - API-driven frontend state for services, orders, delivery, reviews, and reports
@@ -39,7 +39,7 @@ Login -> Add Service -> Pending Review -> Approved -> Receive Order materials ->
 Admin mode:
 
 ```text
-Admin placeholder -> Review Services -> Approve/Reject -> Monitor Orders -> Resolve Reports
+Admin Pi account -> Review Services -> Approve/Reject -> Monitor Orders -> Resolve Reports
 ```
 
 ## Order statuses
@@ -112,7 +112,7 @@ The MVP now captures the digital handoff needed for services such as logo refere
 - Seller delivery link
 - Seller delivery file selection shown as file name and size
 
-Current demo mode records file metadata only. It does not upload or store binary files yet. Before public production, add a dedicated upload endpoint and object storage such as S3, Cloudflare R2, Supabase Storage, or another persistent file store. Keep PostgreSQL for metadata only, not file blobs.
+Current MVP mode records file metadata only. It does not upload or store binary files yet. Before public production, add a dedicated upload endpoint and object storage such as S3, Cloudflare R2, Supabase Storage, or another persistent file store. Keep PostgreSQL for metadata only, not file blobs.
 
 ## Pi SDK integration
 
@@ -191,7 +191,6 @@ PI_NETWORK_API_KEY=
 PI_API_KEY=
 FRONTEND_ORIGIN=http://localhost:5173
 FRONTEND_ORIGINS=
-DEMO_ADMIN_IDS=admin-lina
 PI_ADMIN_USERNAMES=mohammedabobaker
 PLATFORM_FEE_RATE=0.05
 ESCROW_DISPUTE_WINDOW_HOURS=72
@@ -232,24 +231,16 @@ npm run dev:frontend
 
 The Vite dev server proxies `/api` to `http://127.0.0.1:4000`.
 
-## Demo testing
+## Seed testing
 
-The app includes clearly labeled demo account buttons for pre-submission testing on local development and deployed frontend builds such as Vercel or Netlify.
+The production UI does not show demo account buttons. Sign-in requires a verified Pi access token from `Pi.authenticate(...)`.
 
-Demo buttons are shown until real `Pi.authenticate(...)` succeeds. After a real Pi SDK user is connected, the demo buttons are hidden and the official Pi auth path remains untouched.
-
-Demo mode does not require Pi Browser or Pi App Studio. It sends `demoMode=true` to the payment backend so demo payments use mock approval and mock completion while still preserving the backend rule that an order only becomes `Paid` after completion.
-
-- Browse demo: `ali.pi` (`buyer-ali`)
-- Sell demo: `pioneer.demo` (`pi-user-placeholder`)
-- Admin: `lina.admin` (`admin-lina`)
-
-The Prisma seed also creates additional marketplace test users:
+The Prisma seed creates marketplace test users for local database checks:
 
 - Users with listed services: `maha.pi`, `pixelcare`, `faris.lang`, `devdesk`
 - Users with sample orders: `nora.pi`, `sami.pi`
 
-Seed data includes approved services, one pending listing, orders across the main statuses, completed mock payments, one review, and one admin report.
+Seed data includes approved services, one pending listing, orders across the main statuses, completed mock payments, one review, and one admin report. Do not seed production with sample users or orders.
 
 ## Language support
 
@@ -264,8 +255,7 @@ PiDeal Lite detects the device/browser language on first visit:
 
 Admin moderation is controlled by the backend database, not by the mode switcher in the React UI.
 
-- The seeded demo admin is `lina.admin` with user id `admin-lina`.
-- In mock/demo mode, `DEMO_ADMIN_IDS=admin-lina` also allows the deployed demo backend to recognize Demo Admin even if the database was not seeded first.
+- Seed data includes a local admin user named `lina.admin` with user id `admin-lina` for database-only smoke tests.
 - A verified Pi user whose username is listed in `PI_ADMIN_USERNAMES` is created/returned as `admin` after the backend verifies the Pi access token. The current configured admin username is `mohammedabobaker`; set `PI_ADMIN_USERNAMES=` to disable username-based admin bootstrapping after setup.
 - Only users with `User.role = "admin"` can approve, reject, block, remove services, or resolve reports.
 - The frontend hides the Admin tab for non-admin users.
@@ -294,10 +284,8 @@ Frontend on Vercel or Netlify:
 - Build command: `npm run build`
 - Publish directory: `dist`
 - Environment variable: `VITE_API_BASE_URL=https://your-deployed-backend`
-- Environment variable for demo testing: `VITE_ENABLE_PI_SDK=false`
 - Rebuild the frontend after changing `VITE_API_BASE_URL`; Vite embeds this value at build time.
 - The frontend is a single-page app. Pi auth and payment calls still stay isolated in `src/piPlaceholders.js`.
-- Before Pi App Studio submission, open the deployed frontend in a normal mobile browser and confirm Demo Browse, Demo Sell, and Demo Admin can complete their flows without Pi Browser.
 - The deployed frontend must reach the backend API over HTTPS for services, orders, reports, and Pi payment callbacks.
 - If the deployed console shows `/api/services`, `/api/orders`, or `/api/reports` returning 404 from the Vercel domain, `VITE_API_BASE_URL` is missing or the frontend was not rebuilt after setting it.
 
@@ -323,14 +311,12 @@ PostgreSQL persistence:
 - Confirm every primary view works as a single-page app: Services, Sell, Orders, Admin, and Service Detail.
 - Confirm there are no desktop-only controls or hover-required actions.
 - Confirm all text, buttons, forms, and bottom navigation fit at narrow mobile widths.
-- Confirm Pi Login uses the official SDK in Pi Browser and local fallback outside Pi Browser.
+- Confirm Pi Login uses the official SDK in Pi Browser and rejects non-Pi sessions outside Pi Browser.
 - Confirm payment creation opens the official Pi payment flow in Pi Browser.
 - Confirm `VITE_API_BASE_URL` points to the deployed backend outside local development.
 - Confirm backend CORS allows the production frontend domain and Vercel preview domains.
 - Confirm services, orders, delivery, reviews, and reports load from the backend after a page refresh.
-- Confirm the deployed app shows Demo Browse, Demo Sell, and Demo Admin before real Pi auth succeeds.
-- Confirm demo payments stay in mock mode on the deployed backend.
-- Confirm demo buttons disappear after a real Pi SDK authentication succeeds.
+- Confirm no demo account buttons are visible in production.
 - Confirm the Pi App Studio app domain matches the deployed frontend domain before expecting production Pi SDK auth to work.
 - Confirm `PI_NETWORK_API_KEY` or `PI_API_KEY` is configured on the backend host.
 - Confirm `PI_ADMIN_USERNAMES=mohammedabobaker` is configured on the backend host if this Pi account should be the production admin.

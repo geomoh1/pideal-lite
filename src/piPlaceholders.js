@@ -181,13 +181,13 @@ export function getPiIntegrationStatus() {
   if (!isPiSdkAllowedRuntime()) {
     return {
       sdkAvailable: false,
-      mode: 'demo-no-pi-sdk',
+      mode: 'pi-browser-required',
     };
   }
 
   return {
     sdkAvailable: isPiSdkAvailable(),
-    mode: isPiSdkAvailable() ? 'official-pi-sdk' : 'local-mock-fallback',
+    mode: isPiSdkAvailable() ? 'official-pi-sdk' : 'pi-sdk-unavailable',
   };
 }
 
@@ -201,18 +201,7 @@ export async function authenticateWithPi() {
   const pi = await ensurePiSdkReady();
 
   if (!pi?.authenticate) {
-    if (isPiSdkAllowedRuntime()) {
-      throw new Error('Official Pi SDK authentication is not available in this browser.');
-    }
-
-    return {
-      uid: 'pi-user-placeholder',
-      username: 'pioneer.demo',
-      accessToken: 'local-placeholder-access-token',
-      walletStatus: 'Local Pi SDK fallback',
-      authProvider: 'local-fallback',
-      demoMode: true,
-    };
+    throw new Error('Pi Browser login is required. Open PiDeal inside Pi Browser to continue.');
   }
 
   const scopes = ['username', 'payments'];
@@ -231,7 +220,6 @@ export async function authenticateWithPi() {
     accessToken: auth.accessToken,
     walletStatus: 'Official Pi SDK connected',
     authProvider: 'pi-sdk',
-    demoMode: false,
   };
 }
 

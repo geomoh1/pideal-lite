@@ -112,30 +112,6 @@ const blankRequestAsset = {
   fileSize: '',
 };
 
-const demoUsers = [
-  {
-    uid: 'buyer-ali',
-    username: 'ali.pi',
-    role: 'Demo Browse',
-    targetMode: 'Browse',
-    walletStatus: 'Demo browsing account. No Pi Browser required.',
-  },
-  {
-    uid: 'pi-user-placeholder',
-    username: 'pioneer.demo',
-    role: 'Demo Sell',
-    targetMode: 'Sell',
-    walletStatus: 'Demo selling account. Payments stay in mock mode.',
-  },
-  {
-    uid: 'admin-lina',
-    username: 'lina.admin',
-    role: 'Demo Admin',
-    targetMode: 'Admin',
-    walletStatus: 'Demo admin account for moderation testing.',
-  },
-];
-
 const orderFlowSteps = [
   { status: ORDER_STATUS.REQUESTED, label: 'Request' },
   { status: ORDER_STATUS.PENDING_PAYMENT, label: 'Accept' },
@@ -410,50 +386,6 @@ function App() {
     getAuthenticatedPiUser();
   }, [autoAuthAttempted, user]);
 
-  async function handleDemoUser(demoUser) {
-    const demoSession = {
-      uid: demoUser.uid,
-      username: demoUser.username,
-      accessToken: 'local-demo-access-token',
-      walletStatus: demoUser.walletStatus,
-      authProvider: 'demo',
-      demoMode: true,
-    };
-
-    let nextUser;
-    try {
-      nextUser = await attachServerRole(demoSession);
-    } catch {
-      nextUser = {
-        ...demoSession,
-        appRole: demoUser.uid === 'admin-lina' ? 'admin' : 'user',
-      };
-    }
-
-    const targetMode = nextUser.appRole === 'admin' ? demoUser.targetMode : demoUser.targetMode === 'Admin' ? 'Browse' : demoUser.targetMode;
-    setUser(nextUser);
-    setSelectedMode(targetMode);
-    setFlowError('');
-    setFlowNotice(`Demo account active: ${demoUser.username}.`);
-
-    if (targetMode === 'Browse') {
-      setOrderTab('buyer');
-      setActiveView('home');
-    }
-
-    if (targetMode === 'Sell') {
-      setOrderTab('seller');
-      setActiveView('orders');
-    }
-
-    if (targetMode === 'Admin' && nextUser.appRole === 'admin') {
-      setActiveView('admin');
-    }
-
-    void refreshAppData({ actor: nextUser, showRefreshIndicator: true });
-    void refreshNotifications(nextUser);
-  }
-
   function openService(serviceId) {
     setSelectedServiceId(serviceId);
     setActiveView('detail');
@@ -468,6 +400,12 @@ function App() {
 
   async function handleAddService(event) {
     event.preventDefault();
+    if (!user) {
+      setFlowError('Pi login is required before submitting a listing.');
+      setFlowNotice('');
+      return;
+    }
+
     const pricePi = Number(newService.pricePi);
     const depositPi = Number(newService.depositPi);
     const deliveryDays = Number(newService.deliveryDays);
@@ -475,9 +413,9 @@ function App() {
     const listing = {
       title: newService.title.trim(),
       category: newService.category,
-      sellerId: user?.uid ?? 'pi-user-placeholder',
-      sellerName: user?.username ?? 'pioneer.demo',
-      sellerHandle: user ? `@${user.username}` : '@pioneer.demo',
+      sellerId: user.uid,
+      sellerName: user.username,
+      sellerHandle: `@${user.username}`,
       pricePi,
       depositPi,
       deliveryDays,
@@ -490,7 +428,7 @@ function App() {
       experience: newService.experience.trim(),
       revisionPolicy: newService.revisionPolicy.trim(),
       requirementsFromBuyer: newService.requirementsFromBuyer.trim(),
-      deliverables: ['Digital delivery message or link', 'Buyer confirmation required', 'Pi payment placeholder'],
+      deliverables: ['Digital delivery message or link', 'Buyer confirmation required', 'Pi escrow payment'],
     };
 
     try {
@@ -590,7 +528,6 @@ function App() {
         buyerName: order.buyerName,
         sellerId: order.sellerId,
         sellerName: order.sellerName,
-        demoMode: user?.demoMode === true,
       });
       const expectedStatuses =
         mode === 'balance'
@@ -896,7 +833,6 @@ function App() {
           selectedMode={selectedMode}
           piIntegrationStatus={piIntegrationStatus}
           onLogin={handlePiLogin}
-          onDemoUser={handleDemoUser}
         />
         {flowError && <FlowError message={flowError} />}
         {flowNotice && <FlowNotice message={flowNotice} />}
@@ -1095,9 +1031,8 @@ function NotificationCenter({
   );
 }
 
-function PiAccessStrip({ user, selectedMode, piIntegrationStatus, onLogin, onDemoUser }) {
+function PiAccessStrip({ user, selectedMode, piIntegrationStatus, onLogin }) {
   const isRealPiUser = user?.authProvider === 'pi-sdk';
-  const showDemoUsers = !isRealPiUser;
 
   return (
     <Localized>
@@ -1107,27 +1042,10 @@ function PiAccessStrip({ user, selectedMode, piIntegrationStatus, onLogin, onDem
           <span className="eyebrow">Pi Browser ready</span>
           <p>
             {user
-              ? `${isRealPiUser ? 'Signed in' : 'Testing'} as ${user.username}. Active mode: ${selectedMode}.`
-              : `Use Pi Login when available, or choose a demo account for testing. Mode: ${piIntegrationStatus.mode}.`}
+              ? `Signed in as ${user.username}. Active mode: ${selectedMode}.`
+              : `Sign in with Pi Browser to buy, sell, and manage orders. Mode: ${piIntegrationStatus.mode}.`}
           </p>
         </div>
-        {showDemoUsers && (
-          <div className="demo-panel">
-            <span className="demo-label">Demo/testing accounts - no Pi Browser required</span>
-            <div className="demo-account-switch" aria-label="Demo testing accounts">
-              {demoUsers.map((demoUser) => (
-                <button
-                  key={demoUser.uid}
-                  className={user?.uid === demoUser.uid ? 'demo-user-button active' : 'demo-user-button'}
-                  onClick={() => onDemoUser(demoUser)}
-                >
-                  <span>{demoUser.role}</span>
-                  <strong>{demoUser.username}</strong>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
       <button className="primary-button compact" onClick={onLogin}>
         {user ? <BadgeCheck size={17} /> : <LogIn size={17} />}
@@ -2092,7 +2010,7 @@ function ProfileView({
         <div>
           <span className="eyebrow">Profile</span>
           <h1>{user ? user.username : 'Pi user'}</h1>
-          <p>{user ? user.walletStatus : 'Login with the Pi placeholder to unlock mock buyer and seller data.'}</p>
+          <p>{user ? user.walletStatus : 'Sign in with Pi Browser to view your buyer and seller data.'}</p>
         </div>
         {!user && (
           <button className="primary-button" onClick={onLogin}>

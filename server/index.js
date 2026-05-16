@@ -26,10 +26,6 @@ const PI_PLATFORM_API_KEY = process.env.PI_NETWORK_API_KEY || process.env.PI_API
 const USE_MOCK_PAYMENTS =
   process.env.PI_USE_MOCK_PAYMENTS === 'true' ||
   (!PI_PLATFORM_API_KEY && process.env.NODE_ENV !== 'production');
-const DEMO_ADMIN_IDS = (process.env.DEMO_ADMIN_IDS || 'admin-lina')
-  .split(',')
-  .map((id) => id.trim())
-  .filter(Boolean);
 const PI_ADMIN_USERNAMES = parseEnvList(process.env.PI_ADMIN_USERNAMES ?? 'mohammedabobaker')
   .map(normalizePiUsername)
   .filter(Boolean);
@@ -118,10 +114,12 @@ app.get('/api/health', async (request, response, next) => {
 app.post('/api/session', async (request, response, next) => {
   try {
     const accessToken = String(request.body?.accessToken || '').trim();
-    const sessionIdentity = accessToken
-      ? { ...(await verifyPiAccessToken(accessToken)), verifiedPi: true }
-      : getDemoSessionIdentity(request.body || {});
-    const role = getSessionRole(sessionIdentity, request.body || {});
+    if (!accessToken) {
+      return response.status(401).json({ ok: false, error: 'A verified Pi access token is required.' });
+    }
+
+    const sessionIdentity = { ...(await verifyPiAccessToken(accessToken)), verifiedPi: true };
+    const role = getSessionRole(sessionIdentity);
     const user = await ensureUser(sessionIdentity.uid, sessionIdentity.username, role);
 
     return response.json({
@@ -1163,7 +1161,7 @@ function normalizeServiceInput(body) {
     requirementsFromBuyer,
     deliverables: Array.isArray(body.deliverables)
       ? body.deliverables
-      : ['Digital delivery message or link', 'Buyer confirmation required', 'Pi payment placeholder'],
+      : ['Digital delivery message or link', 'Buyer confirmation required', 'Pi escrow payment'],
   };
 }
 
@@ -1714,15 +1712,10 @@ function serializeUser(user) {
   };
 }
 
-function getSessionRole(sessionIdentity, body) {
-  const isDemoAdmin = body.demoMode === true && DEMO_ADMIN_IDS.includes(sessionIdentity.uid);
+function getSessionRole(sessionIdentity) {
   const isConfiguredPiAdmin =
     sessionIdentity.verifiedPi === true &&
     PI_ADMIN_USERNAMES.includes(normalizePiUsername(sessionIdentity.username));
-
-  if (!IS_PRODUCTION && USE_MOCK_PAYMENTS && isDemoAdmin) {
-    return 'admin';
-  }
 
   if (isConfiguredPiAdmin) {
     return 'admin';
@@ -1740,19 +1733,6 @@ function parseEnvList(value) {
 
 function normalizePiUsername(username) {
   return String(username || '').trim().replace(/^@/, '').toLowerCase();
-}
-
-function getDemoSessionIdentity(body) {
-  if (IS_PRODUCTION || !USE_MOCK_PAYMENTS || body.demoMode !== true) {
-    const error = new Error('A verified Pi access token is required.');
-    error.statusCode = 401;
-    throw error;
-  }
-
-  return {
-    uid: requiredString(body.uid, 'uid'),
-    username: requiredString(body.username, 'username'),
-  };
 }
 
 async function refreshServiceRating(serviceId) {
