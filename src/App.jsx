@@ -18,6 +18,7 @@ import {
   Paperclip,
   Plus,
   Search,
+  Share2,
   ShieldCheck,
   Sparkles,
   Star,
@@ -30,6 +31,7 @@ import {
   confirmPiDeliveryPayment,
   createPiDepositPayment,
   getPiIntegrationStatus,
+  isPiBrowserRuntime,
   shouldAutoAuthenticateWithPi,
 } from './piPlaceholders.js';
 import {
@@ -148,6 +150,8 @@ function App() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [autoAuthAttempted, setAutoAuthAttempted] = useState(false);
+  const [initialServiceSlug, setInitialServiceSlug] = useState(() => getInitialServiceSlugFromUrl());
+  const [piBrowserGateService, setPiBrowserGateService] = useState(null);
   const piIntegrationStatus = getPiIntegrationStatus();
   const appDirection = isRtlLanguage(language) ? 'rtl' : 'ltr';
 
@@ -261,6 +265,19 @@ function App() {
       setSelectedServiceId(services[0].id);
     }
   }, [selectedServiceId, services]);
+
+  useEffect(() => {
+    if (!initialServiceSlug || !services.length) return;
+
+    const sharedService = services.find(
+      (service) => service.slug === initialServiceSlug || service.id === initialServiceSlug,
+    );
+    if (!sharedService) return;
+
+    setSelectedServiceId(sharedService.id);
+    setActiveView('detail');
+    setInitialServiceSlug('');
+  }, [initialServiceSlug, services]);
 
   const selectedService = useMemo(
     () =>
@@ -379,6 +396,32 @@ function App() {
     await getAuthenticatedPiUser();
   }
 
+  async function handleShareService(service) {
+    const shareUrl = getServiceShareUrl(service);
+    const shareData = {
+      title: service.title,
+      text: service.summary || 'Order this service securely with PiDeal escrow.',
+      url: shareUrl,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        setFlowNotice('Share sheet opened.');
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareUrl);
+        setFlowNotice('Service link copied.');
+      } else {
+        setFlowNotice(shareUrl);
+      }
+      setFlowError('');
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      setFlowError(getErrorMessage(error, 'Service link could not be shared.'));
+      setFlowNotice('');
+    }
+  }
+
   useEffect(() => {
     if (autoAuthAttempted || user || !shouldAutoAuthenticateWithPi()) return;
 
@@ -450,6 +493,13 @@ function App() {
   }
 
   async function handleRequestService(service) {
+    if (!isPiBrowserRuntime()) {
+      setPiBrowserGateService(service);
+      setFlowError('');
+      setFlowNotice('');
+      return;
+    }
+
     const buyer = await getAuthenticatedPiUser();
     if (!buyer) {
       return;
@@ -837,6 +887,12 @@ function App() {
         {flowError && <FlowError message={flowError} />}
         {flowNotice && <FlowNotice message={flowNotice} />}
         {marketplaceError && <FlowError message={marketplaceError} />}
+        {piBrowserGateService && (
+          <PiBrowserGate
+            service={piBrowserGateService}
+            onClose={() => setPiBrowserGateService(null)}
+          />
+        )}
         {isInitialMarketplaceLoading && <LoadingState message="Loading marketplace data..." />}
 
         {!isInitialMarketplaceLoading && activeView === 'home' && (
@@ -868,6 +924,7 @@ function App() {
             onRateOrder={handleRateOrder}
             onDisputeOrder={handleDisputeOrder}
             onReportService={reportService}
+            onShareService={handleShareService}
           />
         )}
 
@@ -1056,6 +1113,42 @@ function PiAccessStrip({ user, selectedMode, piIntegrationStatus, onLogin }) {
   );
 }
 
+function PiBrowserGate({ service, onClose }) {
+  const executionUrl = getPrivateExecutionUrl(service);
+
+  return (
+    <Localized>
+    <div className="pi-gate" role="dialog" aria-modal="true" aria-label="Open in Pi Browser">
+      <div className="pi-gate-panel">
+        <button className="icon-button pi-gate-close" onClick={onClose} aria-label="Close">
+          x
+        </button>
+        <span className="eyebrow">Protected checkout</span>
+        <h2>Orders and payments work inside Pi Browser</h2>
+        <p>
+          PiDeal protects both buyer and seller through escrow, verified Pi identity,
+          protected delivery, and dispute resolution.
+        </p>
+        <div className="gate-points">
+          <span>Escrow protected</span>
+          <span>Secure Pi payment</span>
+          <span>Verified Pi identity</span>
+          <span>Dispute support</span>
+        </div>
+        <div className="payment-actions">
+          <a className="primary-button" href={executionUrl}>
+            Open in Pi Browser
+          </a>
+          <a className="secondary-button" href="https://minepi.com/pi-browser/" target="_blank" rel="noreferrer">
+            Get Pi Browser
+          </a>
+        </div>
+      </div>
+    </div>
+    </Localized>
+  );
+}
+
 function FlowError({ message }) {
   return (
     <Localized>
@@ -1232,6 +1325,7 @@ function DetailView({
   onRateOrder,
   onDisputeOrder,
   onReportService,
+  onShareService,
 }) {
   const deliveryConfirmed = activeOrder?.status === ORDER_STATUS.COMPLETED;
   const canConfirm = activeOrder?.status === ORDER_STATUS.DELIVERED;
@@ -1241,10 +1335,16 @@ function DetailView({
   return (
     <Localized>
     <section className="view-stack">
-      <button className="ghost-button back-button" onClick={onBack}>
-        <ChevronLeft size={18} />
-        Home
-      </button>
+      <div className="detail-actions">
+        <button className="ghost-button back-button" onClick={onBack}>
+          <ChevronLeft size={18} />
+          Home
+        </button>
+        <button className="secondary-button small" onClick={() => onShareService(service)}>
+          <Share2 size={16} />
+          Share
+        </button>
+      </div>
 
       <article className="detail-panel">
         <div className="detail-hero" style={{ '--accent': service.accent }}>
@@ -2400,6 +2500,24 @@ function formatDateTimeLabel(value) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function getInitialServiceSlugFromUrl() {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.search);
+  return params.get('service') || params.get('s') || '';
+}
+
+function getServiceShareUrl(service) {
+  if (typeof window === 'undefined') return '';
+  const configuredBaseUrl = (import.meta.env.VITE_PUBLIC_SITE_URL || '').replace(/\/$/, '');
+  const baseUrl = configuredBaseUrl || window.location.origin;
+  return `${baseUrl}/service/${encodeURIComponent(service.slug || service.id)}`;
+}
+
+function getPrivateExecutionUrl(service) {
+  if (typeof window === 'undefined') return '';
+  return `${window.location.origin}/?service=${encodeURIComponent(service.slug || service.id)}&from=public`;
 }
 
 function formatSellerStatus(status) {

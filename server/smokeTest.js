@@ -196,6 +196,18 @@ try {
     { actorUserId: 'admin-lina' },
   );
   assertEqual(approvedService.service.status, 'approved', 'Service approval must persist.');
+  assertTruthy(approvedService.service.slug, 'Approved services must expose a public slug.');
+
+  const publicService = await getJson(`/api/public/services/${approvedService.service.slug}`);
+  assertEqual(publicService.service.slug, approvedService.service.slug, 'Public service lookup must work by slug.');
+  assertTruthy(!('sellerId' in publicService.service), 'Public service payload must not expose sellerId.');
+  assertTruthy(!('orders' in publicService.service), 'Public service payload must not expose orders.');
+
+  const publicPage = await getText(`/service/${approvedService.service.slug}`);
+  assertTruthy(
+    publicPage.includes('<meta property="og:title"'),
+    'Public service page must include Open Graph title metadata.',
+  );
 
   const verifiedSeller = await postJson(
     '/api/users/smoke-seller/seller-status',
@@ -596,6 +608,17 @@ async function getJson(path, options = {}) {
     },
   });
   return parseResponse(response);
+}
+
+async function getText(path) {
+  const response = await fetch(`${baseUrl}${path}`);
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(text || `Unexpected response ${response.status}`);
+  }
+
+  return text;
 }
 
 async function postJson(path, body, options = {}) {

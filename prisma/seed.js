@@ -17,6 +17,7 @@ const users = [
 const services = [
   {
     id: 'logo-sprint',
+    slug: 'minimal-logo-design-sprint',
     title: 'Minimal logo design sprint',
     category: 'Design',
     summary: 'Clean logo concepts for Pi apps, shops, and community projects.',
@@ -41,6 +42,7 @@ const services = [
   },
   {
     id: 'cv-refresh',
+    slug: 'professional-cv-rewrite',
     title: 'Professional CV rewrite',
     category: 'Writing',
     summary: 'Sharper CV wording for tech, business, and remote roles.',
@@ -65,6 +67,7 @@ const services = [
   },
   {
     id: 'arabic-english-translation',
+    slug: 'arabic-to-english-translation',
     title: 'Arabic to English translation',
     category: 'Translation',
     summary: 'Clear translation for profiles, app copy, and short documents.',
@@ -89,6 +92,7 @@ const services = [
   },
   {
     id: 'image-polish',
+    slug: 'product-image-cleanup',
     title: 'Product image cleanup',
     category: 'Images',
     summary: 'Background cleanup, crop, contrast, and listing-ready export.',
@@ -113,6 +117,7 @@ const services = [
   },
   {
     id: 'simple-react-fix',
+    slug: 'simple-react-bug-fix',
     title: 'Simple React bug fix',
     category: 'Code',
     summary: 'Small React fixes for forms, layout issues, and state bugs.',

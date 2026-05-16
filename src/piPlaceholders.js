@@ -33,11 +33,17 @@ function isLocalDevelopmentHost() {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 }
 
+export function isPiBrowserRuntime() {
+  if (typeof window === 'undefined') return false;
+
+  return Boolean(window.Pi) || navigator.userAgent.toLowerCase().includes('pibrowser');
+}
+
 function isPiSdkAllowedRuntime() {
   if (typeof window === 'undefined') return false;
   if (isLocalDevelopmentHost()) return window.location.search.includes('pi_sdk=1');
   if (import.meta.env.VITE_ENABLE_PI_SDK === 'true') return true;
-  if (window.Pi?.authenticate) return true;
+  if (isPiBrowserRuntime() || window.Pi?.authenticate) return true;
   return window.location.search.includes('pi_sdk=1');
 }
 

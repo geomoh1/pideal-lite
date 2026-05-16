@@ -37,6 +37,7 @@ export async function ensureServiceSnapshot({ serviceId, sellerId, amountPi }) {
     where: { id: serviceId },
     create: {
       id: serviceId,
+      slug: String(serviceId).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `service-${Date.now()}`,
       title: `Service ${serviceId}`,
       category: 'Digital',
       summary: 'Frontend-created service snapshot for payment persistence.',

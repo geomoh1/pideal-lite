@@ -143,6 +143,8 @@ Endpoints:
 
 ```text
 GET  /api/services
+GET  /api/public/services/:slug
+GET  /service/:slug
 POST /api/services
 POST /api/services/:serviceId/status
 POST /api/services/:serviceId/remove
@@ -191,6 +193,7 @@ PI_NETWORK_API_KEY=
 PI_API_KEY=
 FRONTEND_ORIGIN=http://localhost:5173
 FRONTEND_ORIGINS=
+PUBLIC_SITE_URL=http://localhost:4000
 PI_ADMIN_USERNAMES=mohammedabobaker
 PLATFORM_FEE_RATE=0.05
 ESCROW_DISPUTE_WINDOW_HOURS=72
@@ -201,6 +204,7 @@ Frontend `.env.local` values:
 
 ```text
 VITE_API_BASE_URL=
+VITE_PUBLIC_SITE_URL=
 VITE_ENABLE_PI_SDK=false
 ```
 
@@ -209,6 +213,8 @@ Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API ke
 `FRONTEND_ORIGIN` should point to the deployed frontend URL. `FRONTEND_ORIGINS` can hold comma-separated extra origins. The backend also allows localhost and HTTPS Vercel preview domains ending in `.vercel.app`.
 
 `VITE_API_BASE_URL` controls where the React app sends `/api` calls. Leave it empty in local development so Vite can proxy `/api` to `http://127.0.0.1:4000`. Set it to the deployed backend HTTPS URL before building for Vercel or Netlify, for example `https://your-pideal-backend.onrender.com`.
+
+`PUBLIC_SITE_URL` is the public origin used by backend-rendered share pages such as `/service/:slug`. `VITE_PUBLIC_SITE_URL` should point to the same public origin so the SPA share button creates links with real Open Graph previews.
 
 `VITE_ENABLE_PI_SDK=false` keeps local development from forcing Pi SDK auth. In deployed builds, if the official SDK is present, the app can auto-trigger Pi authentication for Pi App Studio verification. Setting `VITE_ENABLE_PI_SDK=true` still forces SDK auth explicitly, and `?pi_sdk=1` can be used for an intentional one-off local SDK test.
 

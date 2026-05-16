@@ -14,6 +14,7 @@ import {
   getPlatformFeeRate,
   serializeOrder,
   serializePayment,
+  serializePublicService,
   serializeReport,
   serializeService,
   stringifyJson,
@@ -71,6 +72,14 @@ const ESCROW_DISPUTE_WINDOW_HOURS = normalizeNonNegativeNumber(
 const SERVICE_INCLUDE = {
   seller: true,
   reviews: true,
+};
+
+const PUBLIC_SERVICE_INCLUDE = {
+  seller: true,
+  reviews: true,
+  _count: {
+    select: { reviews: true },
+  },
 };
 
 const ORDER_INCLUDE = {
@@ -174,6 +183,49 @@ app.post('/api/escrow/release-due', requireAdmin, async (request, response, next
   }
 });
 
+app.get('/api/public/services/:slug', async (request, response, next) => {
+  try {
+    const publicService = await getPublicServiceBySlug(request.params.slug);
+
+    if (!publicService) {
+      return response.status(404).json({ ok: false, error: 'Public service was not found.' });
+    }
+
+    return response.json({ ok: true, service: publicService });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/service/:slug/share-card.svg', async (request, response, next) => {
+  try {
+    const publicService = await getPublicServiceBySlug(request.params.slug);
+
+    if (!publicService) {
+      return response.status(404).type('text/plain').send('Public service was not found.');
+    }
+
+    response.set('Cache-Control', 'public, max-age=300');
+    return response.type('image/svg+xml').send(renderServiceShareCardSvg(publicService));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/service/:slug', async (request, response, next) => {
+  try {
+    const publicService = await getPublicServiceBySlug(request.params.slug);
+
+    if (!publicService) {
+      return response.status(404).type('html').send(renderPublicNotFoundPage(request));
+    }
+
+    return response.type('html').send(renderPublicServicePage(request, publicService));
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.get('/api/services', async (request, response, next) => {
   try {
     const services = await prisma.service.findMany({
@@ -200,6 +252,7 @@ app.post('/api/services', async (request, response, next) => {
     const service = await prisma.service.create({
       data: {
         id: listing.id,
+        slug: await createUniqueServiceSlug(listing.title),
         title: listing.title,
         category: listing.category,
         sellerId: seller.id,
@@ -1184,6 +1237,308 @@ async function findOrderById(orderId) {
     where: { id: orderId },
     include: ORDER_INCLUDE,
   });
+}
+
+async function getPublicServiceBySlug(rawSlug) {
+  const slug = normalizeSlug(rawSlug);
+  if (!slug) return null;
+
+  const service = await prisma.service.findUnique({
+    where: { slug },
+    include: PUBLIC_SERVICE_INCLUDE,
+  });
+
+  if (!service || service.status !== 'approved' || service.seller?.sellerStatus === 'blocked') {
+    return null;
+  }
+
+  const completedOrders = await prisma.order.count({
+    where: {
+      serviceId: service.id,
+      status: ORDER_STATUS.COMPLETED,
+    },
+  });
+
+  return serializePublicService(service, { completedOrders });
+}
+
+async function createUniqueServiceSlug(title) {
+  const baseSlug = slugify(title) || 'service';
+
+  for (let index = 0; index < 20; index += 1) {
+    const suffix = index === 0 ? '' : `-${index + 1}`;
+    const slug = `${baseSlug}${suffix}`;
+    const existingService = await prisma.service.findUnique({ where: { slug } });
+    if (!existingService) return slug;
+  }
+
+  return `${baseSlug}-${Date.now().toString(36)}`;
+}
+
+function normalizeSlug(value) {
+  return slugify(String(value || '').slice(0, 180));
+}
+
+function slugify(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 90);
+}
+
+function renderPublicServicePage(request, service) {
+  const shareUrl = `${getPublicBaseUrl(request)}/service/${encodeURIComponent(service.slug)}`;
+  const executionUrl = `${getExecutionAppBaseUrl(request)}/?service=${encodeURIComponent(service.slug)}&from=public`;
+  const imageUrl = `${getPublicBaseUrl(request)}/service/${encodeURIComponent(service.slug)}/share-card.svg`;
+  const title = `${service.title} | PiDeal`;
+  const description = truncateText(
+    service.summary || `${service.category} service protected by PiDeal escrow.`,
+    155,
+  );
+  const ratingLabel = service.rating ? `${service.rating} rating` : 'New seller';
+  const completedOrdersLabel = `${service.completedOrders || 0} completed`;
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${escapeHtml(title)}</title>
+    <meta name="description" content="${escapeAttr(description)}" />
+    <link rel="canonical" href="${escapeAttr(shareUrl)}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${escapeAttr(service.title)}" />
+    <meta property="og:description" content="${escapeAttr(description)}" />
+    <meta property="og:image" content="${escapeAttr(imageUrl)}" />
+    <meta property="og:url" content="${escapeAttr(shareUrl)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeAttr(service.title)}" />
+    <meta name="twitter:description" content="${escapeAttr(description)}" />
+    <meta name="twitter:image" content="${escapeAttr(imageUrl)}" />
+    <style>${getPublicServiceCss()}</style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div class="copy">
+          <span class="eyebrow">PiDeal service</span>
+          <h1>${escapeHtml(service.title)}</h1>
+          <p>${escapeHtml(description)}</p>
+          <div class="badges">
+            <span>Escrow protected</span>
+            <span>Verified Pi identity</span>
+            <span>Dispute resolution</span>
+          </div>
+          <div class="actions">
+            <a class="primary" href="${escapeAttr(executionUrl)}" data-order>Order securely in Pi Browser</a>
+            <button class="secondary" type="button" data-share>Share</button>
+          </div>
+        </div>
+        <aside class="card">
+          <div class="art" style="--accent: ${escapeAttr(service.accent)}">${escapeHtml(service.icon)}</div>
+          <dl>
+            <div><dt>Price</dt><dd>${escapeHtml(String(service.pricePi))} Pi</dd></div>
+            <div><dt>Deposit</dt><dd>${escapeHtml(String(service.depositPi))} Pi</dd></div>
+            <div><dt>Delivery</dt><dd>${escapeHtml(String(service.deliveryDays))} days</dd></div>
+          </dl>
+        </aside>
+      </section>
+
+      <section class="trust">
+        <div><strong>${escapeHtml(ratingLabel)}</strong><span>Seller rating</span></div>
+        <div><strong>${escapeHtml(completedOrdersLabel)}</strong><span>Public order proof</span></div>
+        <div><strong>${escapeHtml(service.seller.displayName)}</strong><span>${escapeHtml(formatPublicSellerStatus(service.seller.status))}</span></div>
+      </section>
+
+      <section class="details">
+        <h2>What you get</h2>
+        <ul>
+          ${service.deliverables.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+      </section>
+    </main>
+
+    <div class="gate" hidden data-gate>
+      <div class="gate-panel">
+        <button class="close" type="button" data-close aria-label="Close">x</button>
+        <span class="eyebrow">Continue safely</span>
+        <h2>Orders and payments work inside Pi Browser</h2>
+        <p>PiDeal protects both buyer and seller with verified Pi identity, escrow, protected delivery, and dispute resolution.</p>
+        <div class="gate-grid">
+          <span>Secure checkout</span>
+          <span>Escrow protection</span>
+          <span>Verified Pi identity</span>
+          <span>Dispute support</span>
+        </div>
+        <a class="primary full" href="${escapeAttr(executionUrl)}">Open in Pi Browser</a>
+        <a class="secondary full" href="https://minepi.com/pi-browser/" rel="noopener">Get Pi Browser</a>
+      </div>
+    </div>
+
+    <script>
+      const isPiBrowser = Boolean(window.Pi) || navigator.userAgent.toLowerCase().includes('pibrowser');
+      const gate = document.querySelector('[data-gate]');
+      document.querySelector('[data-order]').addEventListener('click', (event) => {
+        if (isPiBrowser) return;
+        event.preventDefault();
+        gate.hidden = false;
+      });
+      document.querySelector('[data-close]').addEventListener('click', () => {
+        gate.hidden = true;
+      });
+      document.querySelector('[data-share]').addEventListener('click', async () => {
+        const shareData = {
+          title: ${htmlSafeJson(service.title)},
+          text: ${htmlSafeJson(description)},
+          url: ${htmlSafeJson(shareUrl)}
+        };
+        if (navigator.share) {
+          await navigator.share(shareData).catch(() => {});
+        } else if (navigator.clipboard) {
+          await navigator.clipboard.writeText(shareData.url).catch(() => {});
+          alert('Link copied');
+        }
+      });
+    </script>
+  </body>
+</html>`;
+}
+
+function renderPublicNotFoundPage(request) {
+  const homeUrl = getExecutionAppBaseUrl(request);
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Service not found | PiDeal</title>
+    <style>${getPublicServiceCss()}</style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div class="copy">
+          <span class="eyebrow">PiDeal</span>
+          <h1>Service not found</h1>
+          <p>This public service is unavailable or awaiting review.</p>
+          <div class="actions"><a class="primary" href="${escapeAttr(homeUrl)}">Open PiDeal</a></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>`;
+}
+
+function renderServiceShareCardSvg(service) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7fbf8"/>
+      <stop offset="1" stop-color="#e6f3ed"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="72" y="70" width="1056" height="490" rx="36" fill="#ffffff" stroke="#d9e7df" stroke-width="4"/>
+  <circle cx="160" cy="165" r="58" fill="${escapeAttr(service.accent)}"/>
+  <text x="160" y="181" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="800" fill="#1d2520">${escapeHtml(service.icon)}</text>
+  <text x="240" y="145" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="#2d8f6f">PiDeal escrow protected</text>
+  <text x="240" y="215" font-family="Arial, sans-serif" font-size="58" font-weight="900" fill="#121716">${escapeHtml(truncateText(service.title, 42))}</text>
+  <text x="240" y="285" font-family="Arial, sans-serif" font-size="30" fill="#52605a">${escapeHtml(truncateText(service.summary, 74))}</text>
+  <text x="240" y="390" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#121716">${escapeHtml(String(service.pricePi))} Pi</text>
+  <text x="390" y="390" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#121716">${escapeHtml(String(service.deliveryDays))} days</text>
+  <text x="570" y="390" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#121716">${escapeHtml(service.rating ? `${service.rating} rating` : 'New seller')}</text>
+  <text x="240" y="475" font-family="Arial, sans-serif" font-size="26" fill="#52605a">Order securely inside Pi Browser</text>
+</svg>`;
+}
+
+function getPublicServiceCss() {
+  return `
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #121716; background: #edf5f1; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .page { width: min(100%, 1080px); margin: 0 auto; padding: 28px 18px 48px; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr); gap: 18px; align-items: stretch; }
+    .copy, .card, .trust, .details, .gate-panel { border: 1px solid #d9e7df; border-radius: 14px; background: #fff; box-shadow: 0 22px 60px rgba(21, 48, 39, 0.08); }
+    .copy { padding: clamp(24px, 6vw, 56px); }
+    .eyebrow { display: inline-block; margin-bottom: 10px; color: #2d8f6f; font-size: 0.78rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+    h1, h2, p { margin: 0; }
+    h1 { max-width: 880px; font-size: clamp(2.35rem, 8vw, 5.5rem); line-height: 0.98; letter-spacing: 0; }
+    h2 { font-size: clamp(1.45rem, 5vw, 2.35rem); line-height: 1.05; letter-spacing: 0; }
+    p { margin-top: 18px; color: #52605a; font-size: clamp(1rem, 2.4vw, 1.25rem); line-height: 1.55; }
+    .badges, .actions, .gate-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    .badges span, .gate-grid span { padding: 9px 11px; border-radius: 8px; color: #245845; background: #eef9f4; font-weight: 800; }
+    .primary, .secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 46px; padding: 0 18px; border-radius: 8px; border: 1px solid transparent; font: inherit; font-weight: 900; text-decoration: none; cursor: pointer; }
+    .primary { color: #fff; background: #2d8f6f; }
+    .secondary { color: #1d2520; background: #f4f7f2; border-color: #d9e7df; }
+    .full { width: 100%; margin-top: 10px; }
+    .card { display: grid; gap: 18px; padding: 18px; }
+    .art { display: grid; min-height: 220px; place-items: center; border-radius: 12px; color: #171b18; background: linear-gradient(135deg, var(--accent), #ffffff); font-size: 3rem; font-weight: 950; }
+    dl { display: grid; gap: 10px; margin: 0; }
+    dl div { display: flex; justify-content: space-between; gap: 14px; padding: 12px; border-radius: 8px; background: #f8faf7; }
+    dt { color: #52605a; font-weight: 800; }
+    dd { margin: 0; font-weight: 950; }
+    .trust { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; padding: 16px; }
+    .trust div { padding: 16px; border-radius: 8px; background: #f8faf7; }
+    .trust strong, .trust span { display: block; }
+    .trust span { margin-top: 5px; color: #52605a; font-weight: 750; }
+    .details { margin-top: 18px; padding: 24px; }
+    ul { display: grid; gap: 10px; margin: 18px 0 0; padding: 0; list-style: none; }
+    li { padding: 12px; border-radius: 8px; background: #f8faf7; color: #26332e; font-weight: 780; }
+    .gate { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 18px; background: rgba(18, 23, 22, 0.62); }
+    .gate[hidden] { display: none; }
+    .gate-panel { position: relative; width: min(100%, 520px); padding: 24px; }
+    .close { position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border: 1px solid #d9e7df; border-radius: 8px; background: #f8faf7; cursor: pointer; }
+    @media (max-width: 760px) {
+      .hero { grid-template-columns: 1fr; }
+      .trust { grid-template-columns: 1fr; }
+      .copy { padding: 24px; }
+    }
+  `;
+}
+
+function getPublicBaseUrl(request) {
+  const configuredUrl = process.env.PUBLIC_SITE_URL || process.env.PUBLIC_APP_URL;
+  if (configuredUrl) return configuredUrl.replace(/\/$/, '');
+
+  const protocol = String(request.get('x-forwarded-proto') || request.protocol || 'https').split(',')[0].trim();
+  const host = request.get('x-forwarded-host') || request.get('host') || `127.0.0.1:${PORT}`;
+  return `${protocol}://${host}`.replace(/\/$/, '');
+}
+
+function getExecutionAppBaseUrl(request) {
+  return (process.env.FRONTEND_ORIGIN || getPublicBaseUrl(request)).replace(/\/$/, '');
+}
+
+function truncateText(value, maxLength) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+}
+
+function formatPublicSellerStatus(status) {
+  if (status === 'verified') return 'Verified seller';
+  if (status === 'blocked') return 'Under review';
+  return 'New seller';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/`/g, '&#96;');
+}
+
+function htmlSafeJson(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 }
 
 async function findPaymentWithOrder(paymentId) {
