@@ -39,6 +39,8 @@ const ar = {
   'Resolve reports': 'حل البلاغات',
   'Sellers awaiting verification': 'بائعون بانتظار التحقق',
   'Review sellers': 'راجع البائعين',
+  'Work delivered. Pay remaining amount to unlock full delivery files.':
+    'تم تسليم العمل. ادفع المبلغ المتبقي لفتح ملفات التسليم الكاملة.',
   'PiDeal home': 'الرئيسية في PiDeal',
   Notifications: 'الإشعارات',
   Primary: 'التنقل الرئيسي',

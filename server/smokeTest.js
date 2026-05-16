@@ -360,6 +360,31 @@ try {
     'Buyer must see delivered order notifications for their own orders.',
   );
 
+  const buyerOrdersBeforeBalance = await getJson('/api/orders', { actorUserId: 'smoke-buyer' });
+  const buyerDeliveredOrder = buyerOrdersBeforeBalance.orders.find((order) => order.id === orderId);
+  assertEqual(buyerDeliveredOrder.remainingPi, 6, 'Buyer must see the remaining balance before unlocking delivery.');
+  assertEqual(buyerDeliveredOrder.canPayRemaining, true, 'Buyer must be told they can pay the remaining balance.');
+  assertEqual(buyerDeliveredOrder.deliveryMessage, 'Smoke delivery finished.', 'Buyer must see the delivery preview note.');
+  assertEqual(buyerDeliveredOrder.deliveryLink, '', 'Buyer must not receive deliveryLink before remaining payment.');
+  assertEqual(buyerDeliveredOrder.deliveryFileName, '', 'Buyer must not receive delivery file name before remaining payment.');
+  assertEqual(buyerDeliveredOrder.deliveryFileSize, '', 'Buyer must not receive delivery file size before remaining payment.');
+
+  const sellerOrdersBeforeBalance = await getJson('/api/orders', { actorUserId: 'smoke-seller' });
+  const sellerDeliveredOrder = sellerOrdersBeforeBalance.orders.find((order) => order.id === orderId);
+  assertEqual(
+    sellerDeliveredOrder.deliveryLink,
+    'https://www.dropbox.com/s/smoke-delivery.zip',
+    'Seller must receive deliveryLink before buyer pays remaining.',
+  );
+
+  const adminOrdersBeforeBalance = await getJson('/api/orders', { actorUserId: 'admin-lina' });
+  const adminDeliveredOrder = adminOrdersBeforeBalance.orders.find((order) => order.id === orderId);
+  assertEqual(
+    adminDeliveredOrder.deliveryLink,
+    'https://www.dropbox.com/s/smoke-delivery.zip',
+    'Admin must receive deliveryLink before buyer pays remaining.',
+  );
+
   const rejectedConfirm = await postJsonExpectFailure(`/api/orders/${orderId}/confirm`, {});
   assertEqual(rejectedConfirm.status, 409, 'Buyer confirmation must not complete the order while balance is due.');
 
@@ -383,6 +408,25 @@ try {
   assertEqual(balanceCompletion.order.status, 'Completed', 'Remaining balance completion must complete the order.');
   assertEqual(balanceCompletion.order.paidPi, 10, 'Completed order must show the full paid service price.');
   assertEqual(balanceCompletion.order.platformFeePi, 0.3, 'Final fee must use PLATFORM_FEE_RATE on total paid amount.');
+  assertEqual(
+    balanceCompletion.order.deliveryLink,
+    'https://www.dropbox.com/s/smoke-delivery.zip',
+    'Buyer must receive deliveryLink immediately after remaining payment completion.',
+  );
+
+  const buyerOrdersAfterBalance = await getJson('/api/orders', { actorUserId: 'smoke-buyer' });
+  const buyerCompletedOrder = buyerOrdersAfterBalance.orders.find((order) => order.id === orderId);
+  assertEqual(buyerCompletedOrder.remainingPi, 0, 'Completed buyer order must have no remaining balance.');
+  assertEqual(
+    buyerCompletedOrder.deliveryLink,
+    'https://www.dropbox.com/s/smoke-delivery.zip',
+    'Buyer must receive deliveryLink after remaining payment.',
+  );
+  assertEqual(
+    buyerCompletedOrder.deliveryFileName,
+    'smoke-delivery.zip',
+    'Buyer must receive delivery file name after remaining payment.',
+  );
 
   const reviewed = await postJson(`/api/orders/${orderId}/review`, { rating: 5 });
   assertEqual(reviewed.order.rating, 5, 'Review rating must persist on the order response.');

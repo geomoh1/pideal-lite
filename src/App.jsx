@@ -183,7 +183,11 @@ function App() {
     document.documentElement.dir = appDirection;
   }, [appDirection, language]);
 
-  const refreshAppData = useCallback(async ({ showRefreshIndicator = false, shouldApply = () => true } = {}) => {
+  const refreshAppData = useCallback(async ({
+    actor = null,
+    showRefreshIndicator = false,
+    shouldApply = () => true,
+  } = {}) => {
     try {
       if (showRefreshIndicator) {
         setAppRefreshing(true);
@@ -191,7 +195,7 @@ function App() {
         setMarketplaceLoading(true);
       }
 
-      const data = await fetchMarketplaceData();
+      const data = await fetchMarketplaceData(actor);
       if (!shouldApply()) return data;
 
       setServices(data.services);
@@ -305,7 +309,7 @@ function App() {
     marketplaceLoading && services.length === 0 && orders.length === 0 && reports.length === 0;
 
   async function handleLogoRefresh() {
-    await refreshAppData({ showRefreshIndicator: true });
+    await refreshAppData({ actor: user, showRefreshIndicator: true });
     if (user) {
       await refreshNotifications(user);
     }
@@ -384,6 +388,7 @@ function App() {
       }
       setFlowError('');
       setFlowNotice(`Connected as ${sessionUser.username}.`);
+      void refreshAppData({ actor: sessionUser, showRefreshIndicator: true });
       void refreshNotifications(sessionUser);
       return sessionUser;
     } catch (error) {
@@ -444,6 +449,7 @@ function App() {
       setActiveView('admin');
     }
 
+    void refreshAppData({ actor: nextUser, showRefreshIndicator: true });
     void refreshNotifications(nextUser);
   }
 
@@ -1457,6 +1463,8 @@ function OrderProgress({
   canConfirm,
 }) {
   const remainingPi = getRemainingPi(order, service);
+  const showDeliveryBox = canConfirm || deliveryConfirmed;
+  const deliveryAssetsLocked = order.deliveryAssetsLocked || (canConfirm && remainingPi > 0);
 
   return (
     <Localized>
@@ -1486,34 +1494,46 @@ function OrderProgress({
         <StatusHint icon={<Clock3 size={18} />} text="Waiting for seller delivery." />
       )}
 
-      {canConfirm && (
+      {showDeliveryBox && (
         <div className="delivery-box">
           <span className="eyebrow">Seller delivery</span>
-          <p>{order.deliveryMessage}</p>
-          {order.deliveryLink && (
-            <span className="delivery-link"><LinkIcon size={15} /> {order.deliveryLink}</span>
+          <p>{order.deliveryMessage || 'Work delivered. Pay remaining amount to unlock full delivery files.'}</p>
+          {deliveryAssetsLocked && (
+            <StatusHint
+              icon={<ShieldCheck size={18} />}
+              text="Work delivered. Pay remaining amount to unlock full delivery files."
+            />
           )}
-          {order.deliveryFileName && (
-            <span className="delivery-link">
-              <Paperclip size={15} />
-              {order.deliveryFileName} {order.deliveryFileSize ? `(${order.deliveryFileSize})` : ''}
-            </span>
+          {!deliveryAssetsLocked && (
+            <>
+              {order.deliveryLink && (
+                <span className="delivery-link"><LinkIcon size={15} /> {order.deliveryLink}</span>
+              )}
+              {order.deliveryFileName && (
+                <span className="delivery-link">
+                  <Paperclip size={15} />
+                  {order.deliveryFileName} {order.deliveryFileSize ? `(${order.deliveryFileSize})` : ''}
+                </span>
+              )}
+            </>
           )}
           {remainingPi > 0 ? (
             <button className="secondary-button" onClick={() => onPay(order.id, 'balance')}>
               <CircleDollarSign size={18} />
               Pay remaining {remainingPi} Pi
             </button>
-          ) : (
+          ) : canConfirm ? (
             <button className="secondary-button" onClick={() => onConfirmDelivery(order.id)}>
               <ShieldCheck size={18} />
               Confirm delivery
             </button>
+          ) : null}
+          {!deliveryAssetsLocked && (
+            <button className="ghost-button small" onClick={() => onDisputeOrder(order.id)}>
+              <AlertTriangle size={16} />
+              Dispute
+            </button>
           )}
-          <button className="ghost-button small" onClick={() => onDisputeOrder(order.id)}>
-            <AlertTriangle size={16} />
-            Dispute
-          </button>
         </div>
       )}
 
@@ -1885,6 +1905,8 @@ function OrderCard({
   );
   const counterpart = mode === 'seller' ? `Buyer: ${order.buyerName}` : `Seller: ${order.sellerName}`;
   const remainingPi = getRemainingPi(order, service);
+  const deliveryAssetsLocked = order.deliveryAssetsLocked || (order.status === ORDER_STATUS.DELIVERED && remainingPi > 0);
+  const showBuyerDelivery = mode === 'buyer' && [ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(order.status);
 
   return (
     <Localized>
@@ -1975,31 +1997,43 @@ function OrderCard({
         </div>
       )}
 
-      {mode === 'buyer' && order.status === ORDER_STATUS.DELIVERED && (
+      {showBuyerDelivery && (
         <div className="delivery-box">
           <span className="eyebrow">Seller delivery</span>
-          <p>{order.deliveryMessage}</p>
-          {order.deliveryLink && (
-            <span className="delivery-link"><LinkIcon size={15} /> {order.deliveryLink}</span>
+          <p>{order.deliveryMessage || 'Work delivered. Pay remaining amount to unlock full delivery files.'}</p>
+          {deliveryAssetsLocked && (
+            <StatusHint
+              icon={<ShieldCheck size={18} />}
+              text="Work delivered. Pay remaining amount to unlock full delivery files."
+            />
           )}
-          {order.deliveryFileName && (
-            <span className="delivery-link">
-              <Paperclip size={15} />
-              {order.deliveryFileName} {order.deliveryFileSize ? `(${order.deliveryFileSize})` : ''}
-            </span>
+          {!deliveryAssetsLocked && (
+            <>
+              {order.deliveryLink && (
+                <span className="delivery-link"><LinkIcon size={15} /> {order.deliveryLink}</span>
+              )}
+              {order.deliveryFileName && (
+                <span className="delivery-link">
+                  <Paperclip size={15} />
+                  {order.deliveryFileName} {order.deliveryFileSize ? `(${order.deliveryFileSize})` : ''}
+                </span>
+              )}
+            </>
           )}
           {remainingPi > 0 ? (
             <button className="secondary-button" onClick={() => onPay(order.id, 'balance')}>
               Pay remaining {remainingPi} Pi
             </button>
-          ) : (
+          ) : order.status === ORDER_STATUS.DELIVERED ? (
             <button className="secondary-button" onClick={() => onConfirmDelivery(order.id)}>
               Confirm delivery
             </button>
+          ) : null}
+          {!deliveryAssetsLocked && (
+            <button className="ghost-button small" onClick={() => onDisputeOrder(order.id)}>
+              Dispute
+            </button>
           )}
-          <button className="ghost-button small" onClick={() => onDisputeOrder(order.id)}>
-            Dispute
-          </button>
         </div>
       )}
 

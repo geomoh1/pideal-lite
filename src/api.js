@@ -50,10 +50,12 @@ function actorHeaders(actor) {
   return actor?.uid ? { 'X-PiDeal-User-Id': actor.uid } : {};
 }
 
-export async function fetchMarketplaceData() {
+export async function fetchMarketplaceData(actor) {
   const [servicesData, ordersData, reportsData] = await Promise.all([
     requestJson('/api/services'),
-    requestJson('/api/orders'),
+    requestJson('/api/orders', {
+      headers: actorHeaders(actor),
+    }),
     requestJson('/api/reports'),
   ]);
 

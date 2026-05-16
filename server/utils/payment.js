@@ -112,7 +112,7 @@ export function serializeService(service) {
   };
 }
 
-export function serializeOrder(order) {
+export function serializeOrder(order, viewer = null) {
   if (!order) return null;
 
   const completedPayments = Array.isArray(order.payments)
@@ -124,6 +124,12 @@ export function serializeOrder(order) {
   const orderPrice = Number(order.service?.pricePi ?? order.amountPi ?? 0);
   const remainingPi = Number(Math.max(orderPrice - paidTotal, 0).toFixed(2));
   const latestCompletedPayment = completedPayments[0];
+  const viewerId = viewer?.id || viewer?.uid || '';
+  const isAdminViewer = viewer?.role === 'admin' || viewer?.appRole === 'admin';
+  const isSellerViewer = viewerId && viewerId === order.sellerId;
+  const isBuyerViewer = viewerId && viewerId === order.buyerId;
+  const canViewDeliveryAssets = isAdminViewer || isSellerViewer || (isBuyerViewer && remainingPi === 0);
+  const canPayRemaining = isBuyerViewer && order.status === 'Delivered' && remainingPi > 0;
 
   return {
     id: order.id,
@@ -148,9 +154,11 @@ export function serializeOrder(order) {
     requestFileName: order.requestFileName || '',
     requestFileSize: order.requestFileSize || '',
     deliveryMessage: order.deliveryMessage || '',
-    deliveryLink: order.deliveryLink || '',
-    deliveryFileName: order.deliveryFileName || '',
-    deliveryFileSize: order.deliveryFileSize || '',
+    deliveryLink: canViewDeliveryAssets ? order.deliveryLink || '' : '',
+    deliveryFileName: canViewDeliveryAssets ? order.deliveryFileName || '' : '',
+    deliveryFileSize: canViewDeliveryAssets ? order.deliveryFileSize || '' : '',
+    deliveryAssetsLocked: Boolean(order.deliveryLink || order.deliveryFileName) && !canViewDeliveryAssets,
+    canPayRemaining,
     rating: order.review?.rating ?? null,
     createdAt: formatDate(order.createdAt),
     payments: order.payments?.map(serializePayment) || [],

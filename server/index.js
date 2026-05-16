@@ -242,12 +242,13 @@ app.post('/api/users/:userId/seller-status', requireAdmin, async (request, respo
 
 app.get('/api/orders', async (request, response, next) => {
   try {
+    const viewer = await getRequestViewer(request);
     const orders = await prisma.order.findMany({
       include: ORDER_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
 
-    return response.json({ ok: true, orders: orders.map(serializeOrder) });
+    return response.json({ ok: true, orders: orders.map((order) => serializeOrder(order, viewer)) });
   } catch (error) {
     return next(error);
   }
@@ -292,7 +293,7 @@ app.post('/api/orders', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.status(201).json({ ok: true, order: serializeOrder(order) });
+    return response.status(201).json({ ok: true, order: serializeOrder(order, buyer) });
   } catch (error) {
     return next(error);
   }
@@ -314,7 +315,7 @@ app.post('/api/orders/:orderId/accept', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.sellerId }) });
   } catch (error) {
     return next(error);
   }
@@ -336,7 +337,7 @@ app.post('/api/orders/:orderId/start', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.sellerId }) });
   } catch (error) {
     return next(error);
   }
@@ -364,7 +365,7 @@ app.post('/api/orders/:orderId/deliver', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.sellerId }) });
   } catch (error) {
     return next(error);
   }
@@ -389,7 +390,7 @@ app.post('/api/orders/:orderId/confirm', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.buyerId }) });
   } catch (error) {
     return next(error);
   }
@@ -429,7 +430,7 @@ app.post('/api/orders/:orderId/review', async (request, response, next) => {
     await refreshServiceRating(order.serviceId);
     const updatedOrder = await findOrderById(order.id);
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.buyerId }) });
   } catch (error) {
     return next(error);
   }
@@ -443,7 +444,8 @@ app.post('/api/orders/:orderId/cancel', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+    const viewer = await getRequestViewer(request);
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, viewer) });
   } catch (error) {
     return next(error);
   }
@@ -457,7 +459,8 @@ app.post('/api/orders/:orderId/dispute', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+    const viewer = await getRequestViewer(request);
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, viewer) });
   } catch (error) {
     return next(error);
   }
@@ -479,7 +482,7 @@ app.post('/api/orders/:orderId/refund', requireAdmin, async (request, response, 
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, request.actor) });
   } catch (error) {
     return next(error);
   }
@@ -501,7 +504,7 @@ app.post('/api/orders/:orderId/release', requireAdmin, async (request, response,
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, request.actor) });
   } catch (error) {
     return next(error);
   }
@@ -620,7 +623,7 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
       ok: true,
       mock: useMockPayment,
       payment: serializePayment(payment),
-      order: serializeOrder(storedOrder),
+      order: serializeOrder(storedOrder, { id: storedOrder?.buyerId }),
       piPayment,
     });
   } catch (error) {
@@ -687,7 +690,7 @@ async function handleIncompletePiPayment(request, response, next) {
         ok: true,
         action: 'already_completed',
         payment: serializePayment(existingPayment),
-        order: serializeOrder(existingPayment.order),
+        order: serializeOrder(existingPayment.order, { id: existingPayment.order?.buyerId }),
       });
     }
 
@@ -697,7 +700,7 @@ async function handleIncompletePiPayment(request, response, next) {
         action,
         needsTxid: true,
         payment: serializePayment(existingPayment),
-        order: serializeOrder(existingPayment.order),
+        order: serializeOrder(existingPayment.order, { id: existingPayment.order?.buyerId }),
       });
     }
 
@@ -756,7 +759,7 @@ async function handleIncompletePiPayment(request, response, next) {
       action: 'completed',
       mock: useMockPayment,
       payment: serializePayment(payment),
-      order: serializeOrder(storedOrder),
+      order: serializeOrder(storedOrder, { id: storedOrder?.buyerId }),
       piPayment,
     });
   } catch (error) {
@@ -845,7 +848,7 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
       ok: true,
       mock: useMockPayment,
       payment: serializePayment(payment),
-      order: serializeOrder(storedOrder),
+      order: serializeOrder(storedOrder, { id: storedOrder?.buyerId }),
       piPayment,
     });
   } catch (error) {
@@ -864,7 +867,8 @@ app.get('/api/orders/:orderId/status', async (request, response, next) => {
       });
     }
 
-    return response.json({ ok: true, order: serializeOrder(order) });
+    const viewer = await getRequestViewer(request);
+    return response.json({ ok: true, order: serializeOrder(order, viewer) });
   } catch (error) {
     return next(error);
   }
@@ -1116,6 +1120,15 @@ function getActorUserId(request) {
     request.query?.actorUserId ||
     ''
   ).trim();
+}
+
+async function getRequestViewer(request) {
+  const userId = getActorUserId(request);
+  if (!userId) return null;
+
+  return prisma.user.findUnique({
+    where: { id: userId },
+  });
 }
 
 async function getNotificationsForUser(user) {
