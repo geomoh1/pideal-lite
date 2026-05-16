@@ -240,11 +240,14 @@ try {
   const beforeCompletion = await getJson(`/api/orders/${orderId}/status`);
   assertEqual(beforeCompletion.order.status, 'Pending Payment', 'Stored order must remain Pending Payment before completion.');
 
-  const completion = await postJson(`/api/pi/payments/${depositPaymentId}/complete`, {
+  const completion = await postJson('/api/pi/payments/incomplete', {
+    paymentId: depositPaymentId,
     orderId,
     txid: depositTxid,
+    demoMode: true,
   });
 
+  assertEqual(completion.action, 'completed', 'Incomplete payment recovery must complete approved in-flight payments.');
   assertEqual(completion.order.status, 'Deposit Paid', 'Deposit completion must not mark the full order completed.');
   assertEqual(completion.order.paidPi, 4, 'Deposit completion must record only the paid deposit.');
   assertEqual(completion.order.remainingPi, 6, 'Deposit completion must keep the remaining balance due.');

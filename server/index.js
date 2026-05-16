@@ -21,9 +21,10 @@ import {
 const app = express();
 
 const PORT = Number(process.env.PORT || 4000);
+const PI_PLATFORM_API_KEY = process.env.PI_NETWORK_API_KEY || process.env.PI_API_KEY;
 const USE_MOCK_PAYMENTS =
   process.env.PI_USE_MOCK_PAYMENTS === 'true' ||
-  (!process.env.PI_API_KEY && process.env.NODE_ENV !== 'production');
+  (!PI_PLATFORM_API_KEY && process.env.NODE_ENV !== 'production');
 const DEMO_ADMIN_IDS = (process.env.DEMO_ADMIN_IDS || 'admin-lina')
   .split(',')
   .map((id) => id.trim())
@@ -532,6 +533,9 @@ app.post('/api/reports/:reportId/resolve', requireAdmin, async (request, respons
   }
 });
 
+app.post('/api/pi/payments/incomplete', handleIncompletePiPayment);
+app.post('/api/payments/incomplete', handleIncompletePiPayment);
+
 app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) => {
   try {
     const { paymentId } = request.params;
@@ -594,6 +598,142 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
     return next(error);
   }
 });
+
+async function handleIncompletePiPayment(request, response, next) {
+  try {
+    const input = normalizeIncompletePaymentInput(request.body || {});
+
+    if (!input.paymentId) {
+      return response.status(400).json({ ok: false, error: 'paymentId is required for incomplete Pi payments.' });
+    }
+
+    let existingPayment = await findPaymentWithOrder(input.paymentId);
+    let action = 'found_existing_payment';
+
+    if (!existingPayment) {
+      if (!input.orderId) {
+        return response.status(404).json({
+          ok: false,
+          error: 'Incomplete payment is not linked to a known order. Missing metadata.orderId.',
+        });
+      }
+
+      const orderForPayment = await findOrderById(input.orderId);
+      if (!orderForPayment) {
+        return response.status(404).json({ ok: false, error: 'Order for incomplete payment was not found.' });
+      }
+
+      const serverPaymentRequest = resolveServerPaymentRequest(orderForPayment, {
+        paymentId: input.paymentId,
+        orderId: input.orderId,
+        serviceId: input.serviceId,
+        amountPi: null,
+        mode: input.mode,
+        demoMode: input.demoMode,
+      });
+      const useMockPayment = USE_MOCK_PAYMENTS || (!IS_PRODUCTION && input.demoMode);
+      const piPayment = useMockPayment
+        ? createMockPaymentDto({ ...serverPaymentRequest, phase: 'approved' })
+        : await callPiPlatform(`/payments/${encodeURIComponent(input.paymentId)}/approve`);
+
+      await prisma.payment.create({
+        data: {
+          id: input.paymentId,
+          orderId: serverPaymentRequest.orderId,
+          serviceId: serverPaymentRequest.serviceId,
+          amountPi: serverPaymentRequest.amountPi,
+          mode: serverPaymentRequest.mode,
+          status: 'approved',
+          mock: useMockPayment,
+          piPaymentJson: stringifyJson(piPayment),
+        },
+      });
+
+      existingPayment = await findPaymentWithOrder(input.paymentId);
+      action = 'approved_missing_server_record';
+    }
+
+    if (existingPayment.status === 'completed') {
+      return response.json({
+        ok: true,
+        action: 'already_completed',
+        payment: serializePayment(existingPayment),
+        order: serializeOrder(existingPayment.order),
+      });
+    }
+
+    if (!input.txid) {
+      return response.json({
+        ok: true,
+        action,
+        needsTxid: true,
+        payment: serializePayment(existingPayment),
+        order: serializeOrder(existingPayment.order),
+      });
+    }
+
+    if (!['approved', 'completed'].includes(existingPayment.status)) {
+      return response.status(409).json({
+        ok: false,
+        error: 'Incomplete payment exists but is not ready for server completion.',
+      });
+    }
+
+    const useMockPayment = USE_MOCK_PAYMENTS || existingPayment.mock || (!IS_PRODUCTION && input.demoMode);
+    const piPayment = useMockPayment
+      ? createMockPaymentDto({
+          paymentId: input.paymentId,
+          orderId: existingPayment.orderId,
+          serviceId: existingPayment.serviceId,
+          amountPi: existingPayment.amountPi,
+          mode: existingPayment.mode,
+          txid: input.txid,
+          phase: 'completed',
+        })
+      : await callPiPlatform(`/payments/${encodeURIComponent(input.paymentId)}/complete`, { txid: input.txid });
+
+    const nextStatus = resolveStatusAfterPayment(existingPayment.order, existingPayment);
+    const nextPaidTotal = calculatePaidTotal(existingPayment.order, existingPayment);
+
+    const { order, payment } = await prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.update({
+        where: { id: input.paymentId },
+        data: {
+          txid: input.txid,
+          status: 'completed',
+          mock: useMockPayment,
+          piPaymentJson: stringifyJson(piPayment),
+        },
+      });
+
+      const order = await tx.order.update({
+        where: { id: existingPayment.orderId },
+        data: {
+          status: nextStatus,
+          paidAt: new Date(),
+          paymentMode: normalizePaymentMode(existingPayment.mode),
+          amountPi: nextPaidTotal,
+          platformFeePi: calculatePlatformFee(nextPaidTotal),
+        },
+      });
+
+      return { order, payment };
+    });
+
+    const storedOrder = await findOrderById(order.id);
+
+    return response.json({
+      ok: true,
+      action: 'completed',
+      mock: useMockPayment,
+      payment: serializePayment(payment),
+      order: serializeOrder(storedOrder),
+      piPayment,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
 
 app.post('/api/pi/payments/:paymentId/complete', async (request, response, next) => {
   try {
@@ -794,6 +934,35 @@ async function findOrderById(orderId) {
     where: { id: orderId },
     include: ORDER_INCLUDE,
   });
+}
+
+async function findPaymentWithOrder(paymentId) {
+  return prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: {
+      order: {
+        include: {
+          service: true,
+          payments: true,
+        },
+      },
+    },
+  });
+}
+
+function normalizeIncompletePaymentInput(body) {
+  const piPayment = body.piPayment || body.payment || {};
+  const metadata = body.metadata || piPayment.metadata || {};
+  const transaction = body.transaction || piPayment.transaction || {};
+
+  return {
+    paymentId: String(body.paymentId || body.identifier || body.id || piPayment.identifier || piPayment.paymentId || piPayment.id || '').trim(),
+    txid: String(body.txid || transaction.txid || '').trim(),
+    orderId: String(body.orderId || metadata.orderId || '').trim(),
+    serviceId: String(body.serviceId || metadata.serviceId || '').trim(),
+    mode: String(body.mode || metadata.mode || 'deposit').trim(),
+    demoMode: body.demoMode === true,
+  };
 }
 
 function resolveServerPaymentRequest(order, paymentRequest) {

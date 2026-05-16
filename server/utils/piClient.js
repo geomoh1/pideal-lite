@@ -1,5 +1,5 @@
 const PI_API_BASE_URL = (process.env.PI_API_BASE_URL || 'https://api.minepi.com/v2').replace(/\/$/, '');
-const PI_API_KEY = process.env.PI_API_KEY;
+const PI_API_KEY = process.env.PI_NETWORK_API_KEY || process.env.PI_API_KEY;
 
 export async function verifyPiAccessToken(accessToken) {
   if (!accessToken) {
@@ -40,7 +40,7 @@ export async function verifyPiAccessToken(accessToken) {
 
 export async function callPiPlatform(path, body) {
   if (!PI_API_KEY) {
-    const error = new Error('PI_API_KEY is required when mock payments are disabled.');
+    const error = new Error('PI_NETWORK_API_KEY or PI_API_KEY is required when mock payments are disabled.');
     error.statusCode = 500;
     throw error;
   }

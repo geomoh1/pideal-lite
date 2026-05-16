@@ -127,10 +127,11 @@ All Pi auth and payment logic is isolated in `src/piPlaceholders.js`:
 - `approvePiPayment`
 - `completePiPayment`
 - `confirmPiDeliveryPayment`
+- `completeIncompletePiPayment`
 
-The frontend uses the official SDK calls `Pi.authenticate(...)` and `Pi.createPayment(...)` when the SDK is available. Authentication requests only the `username` scope. After Pi authentication succeeds, the frontend sends only the Pi `accessToken` to `POST /api/session`; the backend verifies it with `GET https://api.minepi.com/v2/me` using `Authorization: Bearer <accessToken>` and creates/finds the local `User` from the verified Pi `uid`.
+The frontend uses the official SDK calls `Pi.authenticate(...)` and `Pi.createPayment(...)` when the SDK is available. Authentication requests the `username` and `payments` scopes so the Pi SDK can surface incomplete in-flight payments. After Pi authentication succeeds, the frontend sends only the Pi `accessToken` to `POST /api/session`; the backend verifies it with `GET https://api.minepi.com/v2/me` using `Authorization: Bearer <accessToken>` and creates/finds the local `User` from the verified Pi `uid`.
 
-Important: official Pi payments require server-side approval and server-side completion before an order should be treated as truly paid. PiDeal Lite now routes approval and completion callbacks through the backend endpoints below. The React frontend only advances escrow state after the backend completion endpoint returns the updated order.
+Important: official Pi payments require server-side approval and server-side completion before an order should be treated as truly paid. PiDeal Lite now routes approval, completion, and incomplete-payment recovery through the backend endpoints below. The React frontend only advances escrow state after the backend completion endpoint returns the updated order.
 
 ## Backend API
 
@@ -166,6 +167,8 @@ POST /api/reports/:reportId/resolve
 
 POST /api/pi/payments/:paymentId/approve
 POST /api/pi/payments/:paymentId/complete
+POST /api/pi/payments/incomplete
+POST /api/payments/incomplete
 ```
 
 Environment files:
@@ -181,6 +184,7 @@ Backend `.env` values:
 PORT=4000
 DATABASE_URL="file:./dev.db"
 PI_API_BASE_URL=https://api.minepi.com/v2
+PI_NETWORK_API_KEY=
 PI_API_KEY=
 FRONTEND_ORIGIN=http://localhost:5173
 FRONTEND_ORIGINS=
@@ -197,7 +201,7 @@ VITE_API_BASE_URL=
 VITE_ENABLE_PI_SDK=false
 ```
 
-Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API key. In production, configure `PI_API_KEY` and set `PI_USE_MOCK_PAYMENTS=false`.
+Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API key. In production, configure `PI_NETWORK_API_KEY` or `PI_API_KEY` and set `PI_USE_MOCK_PAYMENTS=false`.
 
 `FRONTEND_ORIGIN` should point to the deployed frontend URL. `FRONTEND_ORIGINS` can hold comma-separated extra origins. The backend also allows localhost and HTTPS Vercel preview domains ending in `.vercel.app`.
 
@@ -298,7 +302,7 @@ Backend on Render or Railway:
 - Start command: `npm start`
 - Recommended deploy setup command: `npm install && npm run prisma:generate && npm run prisma:apply`
 - Environment variables: copy values from `.env.backend.example`.
-- Production values must include `PI_API_KEY` and `PI_USE_MOCK_PAYMENTS=false`.
+- Production values must include `PI_NETWORK_API_KEY` or `PI_API_KEY`, plus `PI_USE_MOCK_PAYMENTS=false`.
 - Set `FRONTEND_ORIGIN` to the Vercel or Netlify production URL. Add extra domains to `FRONTEND_ORIGINS` as needed.
 - The backend must be served over HTTPS because the Pi Browser and payment callbacks should not rely on insecure origins.
 
@@ -325,7 +329,7 @@ SQLite production limitation:
 - Confirm demo payments stay in mock mode on the deployed backend.
 - Confirm demo buttons disappear after a real Pi SDK authentication succeeds.
 - Confirm the Pi App Studio app domain matches the deployed frontend domain before expecting production Pi SDK auth to work.
-- Confirm `PI_API_KEY` is configured on the backend host.
+- Confirm `PI_NETWORK_API_KEY` or `PI_API_KEY` is configured on the backend host.
 - Confirm `PI_ADMIN_USERNAMES=mohammedabobaker` is configured on the backend host if this Pi account should be the production admin.
 - Confirm `PI_USE_MOCK_PAYMENTS=false` in production.
 - Confirm database persistence survives backend restart or redeploy.

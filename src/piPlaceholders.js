@@ -215,10 +215,12 @@ export async function authenticateWithPi() {
     };
   }
 
-  const scopes = ['username'];
+  const scopes = ['username', 'payments'];
 
   function onIncompletePaymentFound(payment) {
-    console.warn('Incomplete Pi payment found', payment);
+    void completeIncompletePiPayment(payment).catch((error) => {
+      console.error('Incomplete Pi payment could not be completed by the backend.', error);
+    });
   }
 
   const auth = await pi.authenticate(scopes, onIncompletePaymentFound);
@@ -385,6 +387,30 @@ export async function completePiPayment({ paymentId, txid, orderId }) {
   });
 }
 
+export async function completeIncompletePiPayment(payment) {
+  const paymentId = getPiPaymentId(payment);
+
+  if (!paymentId) {
+    throw new Error('Incomplete Pi payment did not include a payment identifier.');
+  }
+
+  const transaction = payment?.transaction || {};
+  const metadata = payment?.metadata || {};
+
+  return postJson('/api/pi/payments/incomplete', {
+    paymentId,
+    txid: payment?.txid || transaction.txid || '',
+    orderId: payment?.orderId || metadata.orderId || '',
+    serviceId: payment?.serviceId || metadata.serviceId || '',
+    mode: payment?.mode || metadata.mode || '',
+    piPayment: payment,
+  });
+}
+
 export async function confirmPiDeliveryPayment({ orderId }) {
   return postJson(`/api/orders/${encodeURIComponent(orderId)}/confirm`, {});
+}
+
+function getPiPaymentId(payment) {
+  return String(payment?.identifier || payment?.paymentId || payment?.id || '').trim();
 }
