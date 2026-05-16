@@ -697,6 +697,7 @@ input::placeholder {
 
 .section-heading {
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -1063,6 +1064,28 @@ textarea {
   display: grid;
   gap: 8px;
   padding: 12px;
+}
+
+.escrow-summary {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(45, 143, 111, 0.24);
+  border-radius: 8px;
+  background: #f4fbf7;
+}
+
+.escrow-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.escrow-summary-head strong {
+  color: #185540;
+  font-size: 0.9rem;
 }
 
 .material-list {

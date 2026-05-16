@@ -123,6 +123,18 @@ export function serializeOrder(order, viewer = null) {
   );
   const orderPrice = Number(order.service?.pricePi ?? order.amountPi ?? 0);
   const remainingPi = Number(Math.max(orderPrice - paidTotal, 0).toFixed(2));
+  const escrowStatus = order.escrowStatus || inferEscrowStatus(order, paidTotal, remainingPi);
+  const storedEscrowFeePi = Number(order.escrowFeePi ?? 0);
+  const escrowFeePi = storedEscrowFeePi || Number(order.platformFeePi ?? calculatePlatformFee(paidTotal) ?? 0);
+  const storedSellerPayoutPi = Number(order.sellerPayoutPi ?? 0);
+  const canHaveSellerPayout =
+    ['holding_full', 'release_pending', 'released'].includes(escrowStatus) ||
+    (!['refunded', 'disputed'].includes(escrowStatus) && paidTotal > 0 && remainingPi === 0);
+  const sellerPayoutPi = storedSellerPayoutPi || (canHaveSellerPayout ? Math.max(paidTotal - escrowFeePi, 0) : 0);
+  const storedEscrowHeldPi = Number(order.escrowHeldPi ?? 0);
+  const escrowHeldPi = storedEscrowHeldPi > 0 || ['released', 'refunded'].includes(escrowStatus)
+    ? storedEscrowHeldPi
+    : paidTotal;
   const latestCompletedPayment = completedPayments[0];
   const viewerId = viewer?.id || viewer?.uid || '';
   const isAdminViewer = viewer?.role === 'admin' || viewer?.appRole === 'admin';
@@ -147,6 +159,20 @@ export function serializeOrder(order, viewer = null) {
     platformFeePi: order.platformFeePi ?? calculatePlatformFee(paidTotal) ?? 0,
     platformFeeRate: getPlatformFeeRate(),
     platformFeePercent: getPlatformFeePercentLabel(),
+    escrowStatus,
+    escrowHeldPi: Number(escrowHeldPi.toFixed(2)),
+    escrowFeePi: Number(escrowFeePi.toFixed(2)),
+    sellerPayoutPi: Number(Math.max(sellerPayoutPi, 0).toFixed(2)),
+    refundedPi: Number(order.refundedPi || 0),
+    escrowFundedAt: formatDateTime(order.escrowFundedAt),
+    disputeOpenedAt: formatDateTime(order.disputeOpenedAt),
+    disputeResolvedAt: formatDateTime(order.disputeResolvedAt),
+    disputeWindowEndsAt: formatDateTime(order.disputeWindowEndsAt),
+    releaseEligibleAt: formatDateTime(order.releaseEligibleAt),
+    releasedAt: formatDateTime(order.releasedAt),
+    refundRecordedAt: formatDateTime(order.refundRecordedAt),
+    sellerPayoutTxid: order.sellerPayoutTxid || '',
+    refundTxid: order.refundTxid || '',
     paidAt: order.paidAt,
     buyerNote: order.buyerNote || '',
     requestSourceText: order.requestSourceText || '',
@@ -162,6 +188,7 @@ export function serializeOrder(order, viewer = null) {
     rating: order.review?.rating ?? null,
     createdAt: formatDate(order.createdAt),
     payments: order.payments?.map(serializePayment) || [],
+    escrowEvents: order.escrowEvents?.map(serializeEscrowEvent) || [],
   };
 }
 
@@ -189,6 +216,22 @@ export function serializeReport(report) {
   };
 }
 
+export function serializeEscrowEvent(event) {
+  if (!event) return null;
+
+  return {
+    id: event.id,
+    orderId: event.orderId,
+    actorId: event.actorId || '',
+    type: event.type,
+    amountPi: event.amountPi,
+    status: event.status || '',
+    note: event.note || '',
+    txid: event.txid || '',
+    createdAt: formatDateTime(event.createdAt),
+  };
+}
+
 export function stringifyJson(value) {
   return value ? JSON.stringify(value) : null;
 }
@@ -206,4 +249,18 @@ function parseJson(value) {
 function formatDate(value) {
   if (!value) return '';
   return new Date(value).toISOString().slice(0, 10);
+}
+
+function formatDateTime(value) {
+  if (!value) return '';
+  return new Date(value).toISOString();
+}
+
+function inferEscrowStatus(order, paidTotal, remainingPi) {
+  if (order.status === 'Refunded') return 'refunded';
+  if (order.status === 'Disputed') return 'disputed';
+  if (order.status === 'Completed') return order.releasedAt ? 'released' : 'release_pending';
+  if (paidTotal > 0 && remainingPi <= 0) return 'holding_full';
+  if (paidTotal > 0) return 'holding_deposit';
+  return 'not_funded';
 }

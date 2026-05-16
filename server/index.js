@@ -48,6 +48,30 @@ const ORDER_STATUS = {
   CANCELLED: 'Cancelled',
 };
 
+const ESCROW_STATUS = {
+  NOT_FUNDED: 'not_funded',
+  HOLDING: 'holding',
+  HOLDING_DEPOSIT: 'holding_deposit',
+  HOLDING_FULL: 'holding_full',
+  RELEASE_PENDING: 'release_pending',
+  RELEASED: 'released',
+  DISPUTED: 'disputed',
+  REFUNDED: 'refunded',
+};
+
+const ESCROW_EVENT_TYPE = {
+  FUNDED: 'funded',
+  RELEASE_SCHEDULED: 'release_scheduled',
+  DISPUTE_OPENED: 'dispute_opened',
+  RELEASED: 'released',
+  REFUNDED: 'refunded',
+};
+
+const ESCROW_DISPUTE_WINDOW_HOURS = normalizeNonNegativeNumber(
+  process.env.ESCROW_DISPUTE_WINDOW_HOURS ?? process.env.DISPUTE_WINDOW_HOURS ?? 72,
+  72,
+);
+
 const SERVICE_INCLUDE = {
   seller: true,
   reviews: true,
@@ -59,6 +83,10 @@ const ORDER_INCLUDE = {
   },
   review: true,
   service: true,
+  escrowEvents: {
+    orderBy: { createdAt: 'desc' },
+    take: 8,
+  },
 };
 
 const REPORT_INCLUDE = {
@@ -80,6 +108,7 @@ app.get('/api/health', async (request, response, next) => {
       piPaymentsMode: USE_MOCK_PAYMENTS ? 'mock' : 'pi-platform-api',
       platformFeeRate: getPlatformFeeRate(),
       platformFeePercent: getPlatformFeePercentLabel(),
+      escrowDisputeWindowHours: ESCROW_DISPUTE_WINDOW_HOURS,
     });
   } catch (error) {
     return next(error);
@@ -106,6 +135,7 @@ app.post('/api/session', async (request, response, next) => {
 
 app.get('/api/notifications', async (request, response, next) => {
   try {
+    await releaseEligibleEscrows();
     const userId = getActorUserId(request);
 
     if (!userId) {
@@ -126,6 +156,20 @@ app.get('/api/notifications', async (request, response, next) => {
       ok: true,
       notifications,
       count: notifications.length,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/escrow/release-due', requireAdmin, async (request, response, next) => {
+  try {
+    const result = await releaseEligibleEscrows();
+
+    return response.json({
+      ok: true,
+      releasedCount: result.releasedCount,
+      orderIds: result.orderIds,
     });
   } catch (error) {
     return next(error);
@@ -242,6 +286,7 @@ app.post('/api/users/:userId/seller-status', requireAdmin, async (request, respo
 
 app.get('/api/orders', async (request, response, next) => {
   try {
+    await releaseEligibleEscrows();
     const viewer = await getRequestViewer(request);
     const orders = await prisma.order.findMany({
       include: ORDER_INCLUDE,
@@ -384,10 +429,30 @@ app.post('/api/orders/:orderId/confirm', async (request, response, next) => {
       return response.status(409).json({ ok: false, error: 'Remaining balance must be paid before the order can be completed.' });
     }
 
-    const updatedOrder = await prisma.order.update({
-      where: { id: request.params.orderId },
-      data: { status: ORDER_STATUS.COMPLETED },
-      include: ORDER_INCLUDE,
+    const completedAt = new Date();
+    const escrowReleaseUpdate = buildEscrowReleaseScheduleUpdate(order, completedAt);
+
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      const updatedOrder = await tx.order.update({
+        where: { id: request.params.orderId },
+        data: {
+          status: ORDER_STATUS.COMPLETED,
+          ...escrowReleaseUpdate,
+        },
+        include: ORDER_INCLUDE,
+      });
+
+      await tx.escrowEvent.create({
+        data: {
+          orderId: request.params.orderId,
+          type: ESCROW_EVENT_TYPE.RELEASE_SCHEDULED,
+          amountPi: escrowReleaseUpdate.sellerPayoutPi,
+          status: ESCROW_STATUS.RELEASE_PENDING,
+          note: `Buyer confirmed delivery. Seller payout is scheduled after the ${ESCROW_DISPUTE_WINDOW_HOURS}-hour dispute window.`,
+        },
+      });
+
+      return updatedOrder;
     });
 
     return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.buyerId }) });
@@ -438,9 +503,21 @@ app.post('/api/orders/:orderId/review', async (request, response, next) => {
 
 app.post('/api/orders/:orderId/cancel', async (request, response, next) => {
   try {
+    const order = await findOrderById(request.params.orderId);
+    if (!order) {
+      return response.status(404).json({ ok: false, error: 'Order was not found.' });
+    }
+    if (![ORDER_STATUS.REQUESTED, ORDER_STATUS.PENDING_PAYMENT].includes(order.status)) {
+      return response.status(409).json({ ok: false, error: 'Funded orders must be resolved through delivery, dispute, release, or refund.' });
+    }
+
     const updatedOrder = await prisma.order.update({
       where: { id: request.params.orderId },
-      data: { status: ORDER_STATUS.CANCELLED },
+      data: {
+        status: ORDER_STATUS.CANCELLED,
+        escrowStatus: ESCROW_STATUS.NOT_FUNDED,
+        escrowHeldPi: 0,
+      },
       include: ORDER_INCLUDE,
     });
 
@@ -453,13 +530,44 @@ app.post('/api/orders/:orderId/cancel', async (request, response, next) => {
 
 app.post('/api/orders/:orderId/dispute', async (request, response, next) => {
   try {
-    const updatedOrder = await prisma.order.update({
-      where: { id: request.params.orderId },
-      data: { status: ORDER_STATUS.DISPUTED },
-      include: ORDER_INCLUDE,
+    const order = await findOrderById(request.params.orderId);
+    if (!order) {
+      return response.status(404).json({ ok: false, error: 'Order was not found.' });
+    }
+    if (![ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(order.status)) {
+      return response.status(409).json({ ok: false, error: 'Only delivered or completed orders can be disputed.' });
+    }
+    if ([ESCROW_STATUS.RELEASED, ESCROW_STATUS.REFUNDED].includes(order.escrowStatus)) {
+      return response.status(409).json({ ok: false, error: 'Escrow has already been resolved for this order.' });
+    }
+
+    const disputedAt = new Date();
+    const viewer = await getRequestViewer(request);
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      const updatedOrder = await tx.order.update({
+        where: { id: request.params.orderId },
+        data: {
+          status: ORDER_STATUS.DISPUTED,
+          escrowStatus: ESCROW_STATUS.DISPUTED,
+          disputeOpenedAt: disputedAt,
+        },
+        include: ORDER_INCLUDE,
+      });
+
+      await tx.escrowEvent.create({
+        data: {
+          orderId: request.params.orderId,
+          actorId: viewer?.id || null,
+          type: ESCROW_EVENT_TYPE.DISPUTE_OPENED,
+          amountPi: Number(order.escrowHeldPi || calculatePaidTotal(order)),
+          status: ESCROW_STATUS.DISPUTED,
+          note: 'Escrow release paused because a dispute was opened.',
+        },
+      });
+
+      return updatedOrder;
     });
 
-    const viewer = await getRequestViewer(request);
     return response.json({ ok: true, order: serializeOrder(updatedOrder, viewer) });
   } catch (error) {
     return next(error);
@@ -468,7 +576,7 @@ app.post('/api/orders/:orderId/dispute', async (request, response, next) => {
 
 app.post('/api/orders/:orderId/refund', requireAdmin, async (request, response, next) => {
   try {
-    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
+    const order = await findOrderById(request.params.orderId);
     if (!order) {
       return response.status(404).json({ ok: false, error: 'Order was not found.' });
     }
@@ -476,10 +584,37 @@ app.post('/api/orders/:orderId/refund', requireAdmin, async (request, response, 
       return response.status(409).json({ ok: false, error: 'Only disputed orders can be refunded by admin.' });
     }
 
-    const updatedOrder = await prisma.order.update({
-      where: { id: request.params.orderId },
-      data: { status: ORDER_STATUS.REFUNDED },
-      include: ORDER_INCLUDE,
+    const resolvedAt = new Date();
+    const refundPi = Number((Number(order.escrowHeldPi || 0) || calculatePaidTotal(order)).toFixed(2));
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      const updatedOrder = await tx.order.update({
+        where: { id: request.params.orderId },
+        data: {
+          status: ORDER_STATUS.REFUNDED,
+          escrowStatus: ESCROW_STATUS.REFUNDED,
+          escrowHeldPi: 0,
+          escrowFeePi: 0,
+          sellerPayoutPi: 0,
+          refundedPi: refundPi,
+          platformFeePi: 0,
+          disputeResolvedAt: resolvedAt,
+          refundRecordedAt: resolvedAt,
+        },
+        include: ORDER_INCLUDE,
+      });
+
+      await tx.escrowEvent.create({
+        data: {
+          orderId: request.params.orderId,
+          actorId: request.actor.id,
+          type: ESCROW_EVENT_TYPE.REFUNDED,
+          amountPi: refundPi,
+          status: ESCROW_STATUS.REFUNDED,
+          note: 'Admin resolved dispute in favor of buyer. Refund is recorded for the held escrow.',
+        },
+      });
+
+      return updatedOrder;
     });
 
     return response.json({ ok: true, order: serializeOrder(updatedOrder, request.actor) });
@@ -490,7 +625,7 @@ app.post('/api/orders/:orderId/refund', requireAdmin, async (request, response, 
 
 app.post('/api/orders/:orderId/release', requireAdmin, async (request, response, next) => {
   try {
-    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
+    const order = await findOrderById(request.params.orderId);
     if (!order) {
       return response.status(404).json({ ok: false, error: 'Order was not found.' });
     }
@@ -498,10 +633,30 @@ app.post('/api/orders/:orderId/release', requireAdmin, async (request, response,
       return response.status(409).json({ ok: false, error: 'Only disputed orders can be released by admin.' });
     }
 
-    const updatedOrder = await prisma.order.update({
-      where: { id: request.params.orderId },
-      data: { status: ORDER_STATUS.COMPLETED },
-      include: ORDER_INCLUDE,
+    const releasedAt = new Date();
+    const releaseUpdate = buildEscrowReleaseUpdate(order, releasedAt);
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      const updatedOrder = await tx.order.update({
+        where: { id: request.params.orderId },
+        data: {
+          status: ORDER_STATUS.COMPLETED,
+          ...releaseUpdate,
+        },
+        include: ORDER_INCLUDE,
+      });
+
+      await tx.escrowEvent.create({
+        data: {
+          orderId: request.params.orderId,
+          actorId: request.actor.id,
+          type: ESCROW_EVENT_TYPE.RELEASED,
+          amountPi: releaseUpdate.sellerPayoutPi,
+          status: ESCROW_STATUS.RELEASED,
+          note: 'Admin resolved dispute in favor of seller and released escrow.',
+        },
+      });
+
+      return updatedOrder;
     });
 
     return response.json({ ok: true, order: serializeOrder(updatedOrder, request.actor) });
@@ -726,6 +881,14 @@ async function handleIncompletePiPayment(request, response, next) {
 
     const nextStatus = resolveStatusAfterPayment(existingPayment.order, existingPayment);
     const nextPaidTotal = calculatePaidTotal(existingPayment.order, existingPayment);
+    const completedAt = new Date();
+    const escrowFundingUpdate = buildEscrowFundingUpdate(
+      existingPayment.order,
+      existingPayment,
+      nextStatus,
+      nextPaidTotal,
+      completedAt,
+    );
 
     const { order, payment } = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.update({
@@ -742,12 +905,37 @@ async function handleIncompletePiPayment(request, response, next) {
         where: { id: existingPayment.orderId },
         data: {
           status: nextStatus,
-          paidAt: new Date(),
+          paidAt: completedAt,
           paymentMode: normalizePaymentMode(existingPayment.mode),
           amountPi: nextPaidTotal,
           platformFeePi: calculatePlatformFee(nextPaidTotal),
+          ...escrowFundingUpdate,
         },
       });
+
+      await tx.escrowEvent.create({
+        data: {
+          orderId: existingPayment.orderId,
+          type: ESCROW_EVENT_TYPE.FUNDED,
+          amountPi: existingPayment.amountPi,
+          status: escrowFundingUpdate.escrowStatus,
+          txid: input.txid,
+          note: `${normalizePaymentMode(existingPayment.mode)} completed and held by app escrow.`,
+          metadataJson: stringifyJson({ paymentId: input.paymentId, mode: existingPayment.mode }),
+        },
+      });
+
+      if (escrowFundingUpdate.escrowStatus === ESCROW_STATUS.RELEASE_PENDING) {
+        await tx.escrowEvent.create({
+          data: {
+            orderId: existingPayment.orderId,
+            type: ESCROW_EVENT_TYPE.RELEASE_SCHEDULED,
+            amountPi: escrowFundingUpdate.sellerPayoutPi,
+            status: ESCROW_STATUS.RELEASE_PENDING,
+            note: `Seller payout is scheduled after the ${ESCROW_DISPUTE_WINDOW_HOURS}-hour dispute window.`,
+          },
+        });
+      }
 
       return { order, payment };
     });
@@ -816,6 +1004,14 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
 
     const nextStatus = resolveStatusAfterPayment(existingPayment.order, existingPayment);
     const nextPaidTotal = calculatePaidTotal(existingPayment.order, existingPayment);
+    const completedAt = new Date();
+    const escrowFundingUpdate = buildEscrowFundingUpdate(
+      existingPayment.order,
+      existingPayment,
+      nextStatus,
+      nextPaidTotal,
+      completedAt,
+    );
 
     const { order, payment } = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.update({
@@ -832,12 +1028,37 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
         where: { id: orderId },
         data: {
           status: nextStatus,
-          paidAt: new Date(),
+          paidAt: completedAt,
           paymentMode: normalizePaymentMode(existingPayment.mode),
           amountPi: nextPaidTotal,
           platformFeePi: calculatePlatformFee(nextPaidTotal),
+          ...escrowFundingUpdate,
         },
       });
+
+      await tx.escrowEvent.create({
+        data: {
+          orderId,
+          type: ESCROW_EVENT_TYPE.FUNDED,
+          amountPi: existingPayment.amountPi,
+          status: escrowFundingUpdate.escrowStatus,
+          txid,
+          note: `${normalizePaymentMode(existingPayment.mode)} completed and held by app escrow.`,
+          metadataJson: stringifyJson({ paymentId, mode: existingPayment.mode }),
+        },
+      });
+
+      if (escrowFundingUpdate.escrowStatus === ESCROW_STATUS.RELEASE_PENDING) {
+        await tx.escrowEvent.create({
+          data: {
+            orderId,
+            type: ESCROW_EVENT_TYPE.RELEASE_SCHEDULED,
+            amountPi: escrowFundingUpdate.sellerPayoutPi,
+            status: ESCROW_STATUS.RELEASE_PENDING,
+            note: `Seller payout is scheduled after the ${ESCROW_DISPUTE_WINDOW_HOURS}-hour dispute window.`,
+          },
+        });
+      }
 
       return { order, payment };
     });
@@ -858,6 +1079,7 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
 
 app.get('/api/orders/:orderId/status', async (request, response, next) => {
   try {
+    await releaseEligibleEscrows();
     const order = await findOrderById(request.params.orderId);
 
     if (!order) {
@@ -1088,6 +1310,155 @@ function calculateRemainingPi(order) {
   const servicePrice = Number(order.service?.pricePi || 0);
   const paidTotal = calculatePaidTotal(order);
   return Number(Math.max(servicePrice - paidTotal, 0).toFixed(2));
+}
+
+function buildEscrowFundingUpdate(order, payment, nextStatus, paidTotal, now = new Date()) {
+  const paidPi = Number(Number(paidTotal || 0).toFixed(2));
+  const platformFeePi = calculatePlatformFee(paidPi) || 0;
+  const sellerPayoutPi = Number(Math.max(paidPi - platformFeePi, 0).toFixed(2));
+  const isCompleted = nextStatus === ORDER_STATUS.COMPLETED;
+  const isFullyPaid = calculateRemainingAfterPaidTotal(order, paidPi) <= 0;
+
+  if (isCompleted) {
+    const releaseEligibleAt = getEscrowReleaseEligibleAt(now);
+    return {
+      escrowStatus: ESCROW_STATUS.RELEASE_PENDING,
+      escrowHeldPi: paidPi,
+      escrowFeePi: platformFeePi,
+      sellerPayoutPi,
+      escrowFundedAt: order.escrowFundedAt || now,
+      disputeWindowEndsAt: releaseEligibleAt,
+      releaseEligibleAt,
+      releasedAt: null,
+      refundRecordedAt: null,
+      refundedPi: 0,
+    };
+  }
+
+  return {
+    escrowStatus: isFullyPaid ? ESCROW_STATUS.HOLDING_FULL : ESCROW_STATUS.HOLDING_DEPOSIT,
+    escrowHeldPi: paidPi,
+    escrowFeePi: platformFeePi,
+    sellerPayoutPi: isFullyPaid ? sellerPayoutPi : 0,
+    escrowFundedAt: order.escrowFundedAt || now,
+    releasedAt: null,
+    refundRecordedAt: null,
+    refundedPi: 0,
+  };
+}
+
+function buildEscrowReleaseScheduleUpdate(order, now = new Date()) {
+  const paidTotal = calculateEscrowPaidTotal(order);
+  const platformFeePi = calculatePlatformFee(paidTotal) || 0;
+  const sellerPayoutPi = Number(Math.max(paidTotal - platformFeePi, 0).toFixed(2));
+  const releaseEligibleAt = getEscrowReleaseEligibleAt(now);
+
+  return {
+    escrowStatus: ESCROW_STATUS.RELEASE_PENDING,
+    escrowHeldPi: paidTotal,
+    escrowFeePi: platformFeePi,
+    sellerPayoutPi,
+    platformFeePi,
+    amountPi: paidTotal,
+    escrowFundedAt: order.escrowFundedAt || now,
+    disputeWindowEndsAt: releaseEligibleAt,
+    releaseEligibleAt,
+    releasedAt: null,
+    refundRecordedAt: null,
+    refundedPi: 0,
+  };
+}
+
+function buildEscrowReleaseUpdate(order, now = new Date()) {
+  const paidTotal = calculateEscrowPaidTotal(order);
+  const platformFeePi = calculatePlatformFee(paidTotal) || 0;
+  const sellerPayoutPi = Number(Math.max(paidTotal - platformFeePi, 0).toFixed(2));
+
+  return {
+    escrowStatus: ESCROW_STATUS.RELEASED,
+    escrowHeldPi: 0,
+    escrowFeePi: platformFeePi,
+    sellerPayoutPi,
+    platformFeePi,
+    amountPi: paidTotal,
+    disputeResolvedAt: order.status === ORDER_STATUS.DISPUTED ? now : order.disputeResolvedAt,
+    releaseEligibleAt: order.releaseEligibleAt || now,
+    releasedAt: now,
+  };
+}
+
+async function releaseEligibleEscrows(now = new Date()) {
+  const dueOrders = await prisma.order.findMany({
+    where: {
+      status: ORDER_STATUS.COMPLETED,
+      escrowStatus: ESCROW_STATUS.RELEASE_PENDING,
+      releaseEligibleAt: { lte: now },
+    },
+    include: ORDER_INCLUDE,
+  });
+  const orderIds = [];
+
+  for (const order of dueOrders) {
+    const released = await prisma.$transaction(async (tx) => {
+      const currentOrder = await tx.order.findUnique({
+        where: { id: order.id },
+        include: ORDER_INCLUDE,
+      });
+
+      if (
+        !currentOrder ||
+        currentOrder.status !== ORDER_STATUS.COMPLETED ||
+        currentOrder.escrowStatus !== ESCROW_STATUS.RELEASE_PENDING ||
+        !currentOrder.releaseEligibleAt ||
+        currentOrder.releaseEligibleAt > now
+      ) {
+        return false;
+      }
+
+      const releaseUpdate = buildEscrowReleaseUpdate(currentOrder, now);
+
+      await tx.order.update({
+        where: { id: currentOrder.id },
+        data: releaseUpdate,
+      });
+
+      await tx.escrowEvent.create({
+        data: {
+          orderId: currentOrder.id,
+          type: ESCROW_EVENT_TYPE.RELEASED,
+          amountPi: releaseUpdate.sellerPayoutPi,
+          status: ESCROW_STATUS.RELEASED,
+          note: 'Escrow automatically released after the dispute window ended without an open dispute.',
+        },
+      });
+
+      return true;
+    });
+
+    if (released) {
+      orderIds.push(order.id);
+    }
+  }
+
+  return {
+    releasedCount: orderIds.length,
+    orderIds,
+  };
+}
+
+function getEscrowReleaseEligibleAt(now = new Date()) {
+  return new Date(now.getTime() + ESCROW_DISPUTE_WINDOW_HOURS * 60 * 60 * 1000);
+}
+
+function calculateRemainingAfterPaidTotal(order, paidTotal) {
+  const servicePrice = Number(order.service?.pricePi || 0);
+  return Number(Math.max(servicePrice - Number(paidTotal || 0), 0).toFixed(2));
+}
+
+function calculateEscrowPaidTotal(order) {
+  const paidTotal = calculatePaidTotal(order);
+  if (paidTotal > 0) return paidTotal;
+  return Number(Number(order.escrowHeldPi || order.amountPi || 0).toFixed(2));
 }
 
 async function requireAdmin(request, response, next) {
@@ -1419,6 +1790,12 @@ function positiveNumber(value, fieldName) {
   if (!Number.isFinite(number) || number <= 0) {
     badRequest(`${fieldName} must be a positive number.`);
   }
+  return number;
+}
+
+function normalizeNonNegativeNumber(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return fallback;
   return number;
 }
 

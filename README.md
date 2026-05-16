@@ -71,13 +71,15 @@ PiDeal uses a lightweight trust model for the MVP:
 - Buyers can report services and dispute delivered orders.
 - Admin can verify or block sellers, remove services, resolve reports, refund disputed orders, or release disputed orders to the seller.
 
-Payments use logical escrow state, not internal wallets or balances:
+Payments use app-side escrow records backed by completed Pi payments:
 
 ```text
 Requested -> Pending Payment -> Deposit Paid -> In Progress -> Delivered -> Completed
 ```
 
-The buyer first sends requirements/materials. The seller must accept the request before the buyer can pay the deposit. After seller delivery, the order is not completed until the buyer pays the remaining balance. If the service was already fully paid, delivery confirmation can complete the order.
+The buyer first sends requirements/materials. The seller must accept the request before the buyer can pay the deposit. Completed deposit and balance payments are recorded as held escrow on the order. After seller delivery, the order is not completed until the buyer pays the remaining balance. If the service was already fully paid, delivery confirmation can complete the order.
+
+When an order becomes `Completed`, PiDeal starts a dispute window controlled by `ESCROW_DISPUTE_WINDOW_HOURS` (`72` by default). If no dispute is opened before `releaseEligibleAt`, the backend records the escrow as released to the seller net of the configured platform fee. If a dispute is opened, release is paused until admin chooses refund or release.
 
 For disputes:
 
@@ -86,7 +88,7 @@ Delivered -> Disputed -> Refunded
 Delivered -> Disputed -> Completed
 ```
 
-`Deposit Paid` means the backend completed the deposit payment. `Completed` means the full service price has been paid through completed backend payments.
+`Deposit Paid` means the backend completed the deposit payment and holds it in escrow. `Completed` means the full service price has been paid through completed backend payments and the dispute window has started. `Released` escrow records are app-side settlement records; wire them to a real Pi App-to-User payout/refund transaction only when that production capability is available and configured.
 
 ## User model
 
@@ -157,6 +159,7 @@ POST /api/orders/:orderId/cancel
 POST /api/orders/:orderId/dispute
 POST /api/orders/:orderId/refund
 POST /api/orders/:orderId/release
+POST /api/escrow/release-due
 GET  /api/orders/:orderId/status
 
 POST /api/session
@@ -191,6 +194,7 @@ FRONTEND_ORIGINS=
 DEMO_ADMIN_IDS=admin-lina
 PI_ADMIN_USERNAMES=mohammedabobaker
 PLATFORM_FEE_RATE=0.05
+ESCROW_DISPUTE_WINDOW_HOURS=72
 PI_USE_MOCK_PAYMENTS=true
 ```
 

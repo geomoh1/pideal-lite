@@ -33,6 +33,7 @@ const server = spawn(process.execPath, ['server/index.js'], {
     PI_USE_MOCK_PAYMENTS: 'false',
     PI_ADMIN_USERNAMES: 'mohammedabobaker',
     PLATFORM_FEE_RATE: '0.03',
+    ESCROW_DISPUTE_WINDOW_HOURS: '0',
     DATABASE_URL: process.env.DATABASE_URL,
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -78,6 +79,7 @@ try {
 
   const health = await waitForHealth();
   assertEqual(health.platformFeePercent, '3%', 'Backend must read PLATFORM_FEE_RATE from the environment.');
+  assertEqual(health.escrowDisputeWindowHours, 0, 'Backend must expose the configured escrow dispute window.');
   const verifiedSession = await postJson('/api/session', {
     accessToken: 'valid-user-token',
   });
@@ -330,6 +332,9 @@ try {
   assertEqual(completion.order.remainingPi, 6, 'Deposit completion must keep the remaining balance due.');
   assertEqual(completion.order.platformFeePi, 0.12, 'Deposit fee must use PLATFORM_FEE_RATE.');
   assertEqual(completion.order.platformFeePercent, '3%', 'Order responses must expose the active platform fee label.');
+  assertEqual(completion.order.escrowStatus, 'holding_deposit', 'Deposit completion must hold funds in escrow.');
+  assertEqual(completion.order.escrowHeldPi, 4, 'Escrow must hold the completed deposit amount.');
+  assertEqual(completion.order.sellerPayoutPi, 0, 'Seller payout must not be available before full payment.');
   assertEqual(completion.mock, true, 'Demo completion must stay in mock mode.');
 
   const started = await postJson(`/api/orders/${orderId}/start`, {});
@@ -408,6 +413,10 @@ try {
   assertEqual(balanceCompletion.order.status, 'Completed', 'Remaining balance completion must complete the order.');
   assertEqual(balanceCompletion.order.paidPi, 10, 'Completed order must show the full paid service price.');
   assertEqual(balanceCompletion.order.platformFeePi, 0.3, 'Final fee must use PLATFORM_FEE_RATE on total paid amount.');
+  assertEqual(balanceCompletion.order.escrowStatus, 'release_pending', 'Full payment must schedule escrow release.');
+  assertEqual(balanceCompletion.order.escrowHeldPi, 10, 'Full payment must remain held during the dispute window.');
+  assertEqual(balanceCompletion.order.sellerPayoutPi, 9.7, 'Seller payout must be net of platform fee.');
+  assertTruthy(balanceCompletion.order.releaseEligibleAt, 'Completed escrow must expose its release eligibility time.');
   assertEqual(
     balanceCompletion.order.deliveryLink,
     'https://www.dropbox.com/s/smoke-delivery.zip',
@@ -417,6 +426,10 @@ try {
   const buyerOrdersAfterBalance = await getJson('/api/orders', { actorUserId: 'smoke-buyer' });
   const buyerCompletedOrder = buyerOrdersAfterBalance.orders.find((order) => order.id === orderId);
   assertEqual(buyerCompletedOrder.remainingPi, 0, 'Completed buyer order must have no remaining balance.');
+  assertEqual(buyerCompletedOrder.escrowStatus, 'released', 'Eligible completed escrow must auto-release after the dispute window.');
+  assertEqual(buyerCompletedOrder.escrowHeldPi, 0, 'Released escrow must no longer hold buyer funds.');
+  assertEqual(buyerCompletedOrder.sellerPayoutPi, 9.7, 'Released escrow must preserve the seller net payout.');
+  assertTruthy(buyerCompletedOrder.releasedAt, 'Released escrow must record a release timestamp.');
   assertEqual(
     buyerCompletedOrder.deliveryLink,
     'https://www.dropbox.com/s/smoke-delivery.zip',
@@ -462,6 +475,9 @@ try {
       status: 'Disputed',
       amountPi: 4,
       platformFeePi: 0.2,
+      escrowStatus: 'disputed',
+      escrowHeldPi: 4,
+      escrowFeePi: 0.2,
     },
   });
   const refunded = await postJson(
@@ -470,6 +486,36 @@ try {
     { actorUserId: 'admin-lina' },
   );
   assertEqual(refunded.order.status, 'Refunded', 'Admin must be able to mark a disputed order refunded.');
+  assertEqual(refunded.order.escrowStatus, 'refunded', 'Refund resolution must close escrow as refunded.');
+  assertEqual(refunded.order.refundedPi, 4, 'Refund resolution must record the refunded held amount.');
+  assertEqual(refunded.order.escrowHeldPi, 0, 'Refunded escrow must no longer hold funds.');
+
+  const releasedDisputeOrderId = `smoke-dispute-release-${startedAt}`;
+  await prisma.order.create({
+    data: {
+      id: releasedDisputeOrderId,
+      serviceId,
+      buyerId: 'smoke-buyer',
+      sellerId: 'smoke-seller',
+      buyerName: 'smoke.buyer',
+      sellerName: 'smoke.seller',
+      status: 'Disputed',
+      amountPi: 10,
+      platformFeePi: 0.3,
+      escrowStatus: 'disputed',
+      escrowHeldPi: 10,
+      escrowFeePi: 0.3,
+    },
+  });
+  const releasedDispute = await postJson(
+    `/api/orders/${releasedDisputeOrderId}/release`,
+    {},
+    { actorUserId: 'admin-lina' },
+  );
+  assertEqual(releasedDispute.order.status, 'Completed', 'Admin release must return a disputed order to completed.');
+  assertEqual(releasedDispute.order.escrowStatus, 'released', 'Admin release must close escrow as released.');
+  assertEqual(releasedDispute.order.escrowHeldPi, 0, 'Released dispute escrow must no longer hold funds.');
+  assertEqual(releasedDispute.order.sellerPayoutPi, 9.7, 'Admin release must record the seller net payout.');
 
   const afterCompletion = await getJson(`/api/orders/${orderId}/status`);
   assertEqual(afterCompletion.order.status, 'Completed', 'Stored order must persist the final status.');

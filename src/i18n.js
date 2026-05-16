@@ -41,6 +41,22 @@ const ar = {
   'Review sellers': 'راجع البائعين',
   'Work delivered. Pay remaining amount to unlock full delivery files.':
     'تم تسليم العمل. ادفع المبلغ المتبقي لفتح ملفات التسليم الكاملة.',
+  Escrow: 'الضمان',
+  Held: 'محتجز',
+  'Seller net': 'صافي البائع',
+  Refunded: 'مسترد',
+  'Deposit held': 'العربون محتجز',
+  'Full amount held': 'كامل المبلغ محتجز',
+  'Release pending': 'بانتظار التحرير',
+  Released: 'تم التحرير',
+  'Not funded': 'غير ممول',
+  'Escrow paused for admin dispute review.': 'تم إيقاف الضمان مؤقتًا لمراجعة النزاع من الأدمن.',
+  'Buyer payment is held by app escrow until delivery and dispute checks complete.':
+    'دفعة المشتري محتجزة في ضمان التطبيق حتى اكتمال التسليم وفحوص النزاع.',
+  'Remaining balance completed. Delivery is unlocked and escrow is pending release after the dispute window.':
+    'تم دفع المتبقي. تم فتح التسليم والضمان بانتظار التحرير بعد فترة النزاع.',
+  'Release due escrows': 'حرر الضمانات المستحقة',
+  'Due escrow releases could not be processed.': 'تعذر تنفيذ تحرير الضمانات المستحقة.',
   'PiDeal home': 'الرئيسية في PiDeal',
   Notifications: 'الإشعارات',
   Primary: 'التنقل الرئيسي',
@@ -338,6 +354,22 @@ const arPatterns = [
   {
     pattern: /^Pay remaining (.+) Pi$/,
     render: ([, amount]) => `ادفع المتبقي ${amount} Pi`,
+  },
+  {
+    pattern: /^Escrow releases after dispute window: (.+)$/,
+    render: ([, time]) => `يتحرر الضمان بعد فترة النزاع: ${time}`,
+  },
+  {
+    pattern: /^Escrow released to seller record: (.+)$/,
+    render: ([, time]) => `تم تسجيل تحرير الضمان للبائع: ${time}`,
+  },
+  {
+    pattern: /^Escrow refunded to buyer record: (.+)$/,
+    render: ([, time]) => `تم تسجيل استرداد الضمان للمشتري: ${time}`,
+  },
+  {
+    pattern: /^(.+) escrow releases processed\.$/,
+    render: ([, count]) => `تم تنفيذ ${count} من تحريرات الضمان.`,
   },
   {
     pattern: /^Fee (.+)$/,

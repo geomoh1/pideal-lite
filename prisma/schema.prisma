@@ -80,14 +80,49 @@ model Order {
   deliveryLink         String?
   deliveryFileName     String?
   deliveryFileSize     String?
+  escrowStatus         String    @default("not_funded")
+  escrowHeldPi         Float     @default(0)
+  escrowFeePi          Float     @default(0)
+  sellerPayoutPi       Float     @default(0)
+  refundedPi           Float     @default(0)
+  escrowFundedAt       DateTime?
+  disputeOpenedAt      DateTime?
+  disputeResolvedAt    DateTime?
+  disputeWindowEndsAt  DateTime?
+  releaseEligibleAt    DateTime?
+  releasedAt           DateTime?
+  refundRecordedAt     DateTime?
+  sellerPayoutTxid     String?
+  refundTxid           String?
   payments             Payment[]
   review               Review?
+  escrowEvents         EscrowEvent[]
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
   @@index([serviceId])
   @@index([buyerId])
   @@index([sellerId])
+  @@index([status])
+  @@index([escrowStatus])
+  @@index([releaseEligibleAt])
+}
+
+model EscrowEvent {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actorId      String?
+  type         String
+  amountPi     Float?
+  status       String?
+  note         String?
+  txid         String?
+  metadataJson String?
+  createdAt    DateTime @default(now())
+
+  @@index([orderId])
+  @@index([type])
   @@index([status])
 }
 

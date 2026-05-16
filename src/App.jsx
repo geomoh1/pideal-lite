@@ -44,6 +44,7 @@ import {
   fetchMarketplaceData,
   removeServiceById,
   refundOrder as refundOrderApi,
+  releaseDueEscrows as releaseDueEscrowsApi,
   releaseOrder as releaseOrderApi,
   resolveReportById,
   reviewOrder as reviewOrderApi,
@@ -611,7 +612,7 @@ function App() {
 
     setFlowNotice(
       mode === 'balance'
-        ? 'Remaining balance completed. The order is now complete and ready for rating.'
+        ? 'Remaining balance completed. Delivery is unlocked and escrow is pending release after the dispute window.'
         : 'Deposit completed by the backend. The seller can start work now.',
     );
     setOrders((current) =>
@@ -848,6 +849,19 @@ function App() {
     }
   }
 
+  async function releaseDueEscrows() {
+    try {
+      const result = await releaseDueEscrowsApi(user);
+      setFlowNotice(`${result.releasedCount || 0} escrow releases processed.`);
+      setFlowError('');
+      await refreshAppData({ actor: user, showRefreshIndicator: true });
+      void refreshNotifications(user);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Due escrow releases could not be processed.'));
+      setFlowNotice('');
+    }
+  }
+
   return (
     <I18nProvider language={language}>
       <Localized>
@@ -982,6 +996,7 @@ function App() {
               resolveReport={resolveReport}
               refundOrder={refundOrder}
               releaseOrder={releaseOrder}
+              releaseDueEscrows={releaseDueEscrows}
               openService={openService}
             />
           ) : (
@@ -1476,6 +1491,7 @@ function OrderProgress({
       </div>
       <OrderMaterials order={order} />
       <StatusTimeline status={order.status} />
+      <EscrowSummary order={order} />
 
       {order.status === ORDER_STATUS.REQUESTED && (
         <StatusHint icon={<Clock3 size={18} />} text="Waiting for seller acceptance before deposit payment." />
@@ -1922,6 +1938,7 @@ function OrderCard({
         <Metric label="Remaining" value={`${remainingPi} Pi`} />
         <Metric label={`Fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
       </div>
+      <EscrowSummary order={order} />
 
       {mode === 'seller' && order.status === ORDER_STATUS.REQUESTED && (
         <div className="payment-actions">
@@ -2155,6 +2172,7 @@ function AdminView({
   resolveReport,
   refundOrder,
   releaseOrder,
+  releaseDueEscrows,
   openService,
 }) {
   const pendingCount = services.filter((service) => service.status === 'pending').length;
@@ -2175,6 +2193,11 @@ function AdminView({
             </button>
           ))}
         </div>
+        {adminTab === 'orders' && (
+          <button className="secondary-button small" onClick={releaseDueEscrows}>
+            Release due escrows
+          </button>
+        )}
       </div>
 
       <div className="stats-grid">
@@ -2236,8 +2259,10 @@ function AdminView({
                 <div className="order-meta-grid">
                   <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
                   <Metric label={`Fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
+                  <Metric label="Escrow" value={formatEscrowStatus(order.escrowStatus)} />
                   <Metric label="Created" value={order.createdAt} />
                 </div>
+                <EscrowSummary order={order} />
                 {order.status === ORDER_STATUS.DISPUTED && (
                   <div className="moderation-actions">
                     <button className="secondary-button small" onClick={() => releaseOrder(order.id)}>
@@ -2275,6 +2300,30 @@ function AdminView({
         </div>
       )}
     </section>
+    </Localized>
+  );
+}
+
+function EscrowSummary({ order }) {
+  const hasEscrow = Boolean(order?.escrowStatus && order.escrowStatus !== 'not_funded') || Number(order?.paidPi || 0) > 0;
+  if (!hasEscrow) return null;
+
+  const hint = getEscrowHint(order);
+
+  return (
+    <Localized>
+    <div className="escrow-summary">
+      <div className="escrow-summary-head">
+        <span className="eyebrow">Escrow</span>
+        <strong>{formatEscrowStatus(order.escrowStatus)}</strong>
+      </div>
+      <div className="order-meta-grid">
+        <Metric label="Held" value={`${order.escrowHeldPi || 0} Pi`} />
+        <Metric label="Seller net" value={`${order.sellerPayoutPi || 0} Pi`} />
+        <Metric label="Refunded" value={`${order.refundedPi || 0} Pi`} />
+      </div>
+      {hint && <StatusHint icon={hint.icon} text={hint.text} />}
+    </div>
     </Localized>
   );
 }
@@ -2369,6 +2418,70 @@ function getRemainingPi(order, service) {
   const pricePi = Number(service?.pricePi || 0);
   const paidPi = Number(order?.paidPi || 0);
   return Number(Math.max(pricePi - paidPi, 0).toFixed(2));
+}
+
+function getEscrowHint(order) {
+  if (!order) return null;
+
+  if (order.escrowStatus === 'release_pending' && order.releaseEligibleAt) {
+    return {
+      icon: <Clock3 size={18} />,
+      text: `Escrow releases after dispute window: ${formatDateTimeLabel(order.releaseEligibleAt)}`,
+    };
+  }
+
+  if (order.escrowStatus === 'released') {
+    return {
+      icon: <ShieldCheck size={18} />,
+      text: `Escrow released to seller record: ${formatDateTimeLabel(order.releasedAt)}`,
+    };
+  }
+
+  if (order.escrowStatus === 'disputed') {
+    return {
+      icon: <AlertTriangle size={18} />,
+      text: 'Escrow paused for admin dispute review.',
+    };
+  }
+
+  if (order.escrowStatus === 'refunded') {
+    return {
+      icon: <CircleDollarSign size={18} />,
+      text: `Escrow refunded to buyer record: ${formatDateTimeLabel(order.refundRecordedAt)}`,
+    };
+  }
+
+  if (['holding', 'holding_deposit', 'holding_full'].includes(order.escrowStatus)) {
+    return {
+      icon: <WalletCards size={18} />,
+      text: 'Buyer payment is held by app escrow until delivery and dispute checks complete.',
+    };
+  }
+
+  return null;
+}
+
+function formatEscrowStatus(status) {
+  if (status === 'holding_deposit') return 'Deposit held';
+  if (status === 'holding_full') return 'Full amount held';
+  if (status === 'holding') return 'Held';
+  if (status === 'release_pending') return 'Release pending';
+  if (status === 'released') return 'Released';
+  if (status === 'disputed') return 'Disputed';
+  if (status === 'refunded') return 'Refunded';
+  return 'Not funded';
+}
+
+function formatDateTimeLabel(value) {
+  if (!value) return 'not set';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'not set';
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function formatSellerStatus(status) {
