@@ -1228,11 +1228,13 @@ function DetailView({
             <label>
               Reference link
               <input
+                type="url"
                 value={requestAsset.referenceLink}
                 onChange={(event) => updateRequestAsset('referenceLink', event.target.value)}
-                placeholder="https://example.com/reference"
+                placeholder="https://drive.google.com/file/d/..."
               />
             </label>
+            <p className="field-hint">Use HTTPS links from Drive, Docs, Dropbox, GitHub, Figma, Canva, Notion, or trusted file storage. Messaging, social, payment, and short links are not accepted.</p>
             <label className="file-field">
               Reference file
               <input
@@ -1572,20 +1574,24 @@ function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) 
         <label>
           Portfolio URL
           <input
+            type="url"
             value={newService.portfolioUrl}
             onChange={(event) => updateField('portfolioUrl', event.target.value)}
-            placeholder="https://example.com/portfolio"
+            placeholder="https://github.com/yourname/portfolio"
           />
         </label>
+        <p className="field-hint">Use a trusted work-sample link such as GitHub, Behance, Dribbble, Figma, Canva, Google Drive/Docs, Dropbox, Notion, Medium, or CodePen. HTTPS only.</p>
 
         <label>
           Proof link
           <input
+            type="url"
             value={newService.proofLink}
             onChange={(event) => updateField('proofLink', event.target.value)}
-            placeholder="https://example.com/work-samples"
+            placeholder="https://drive.google.com/drive/folders/..."
           />
         </label>
+        <p className="field-hint">Use proof of previous digital work. Do not use WhatsApp, Telegram, Instagram, Facebook, Discord, TikTok, payment pages, or short links.</p>
 
         <p className="field-hint">Do not include phone numbers, email, messaging apps, or social contact links. Admin reviews listings before publishing.</p>
 
@@ -1769,11 +1775,13 @@ function OrderCard({
           <label>
             Delivery link
             <input
+              type="url"
               value={draft.deliveryLink ?? ''}
               onChange={(event) => updateDeliveryDraft(order.id, 'deliveryLink', event.target.value)}
-              placeholder="https://example.com/mock-delivery"
+              placeholder="https://www.dropbox.com/s/..."
             />
           </label>
+          <p className="field-hint">Use HTTPS delivery links from Drive, Dropbox, GitHub/GitLab, Vercel, Netlify, Notion, or trusted storage. Direct contact, external payment, and short links are blocked.</p>
           <label className="file-field">
             Delivery file
             <input

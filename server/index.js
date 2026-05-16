@@ -4,6 +4,7 @@ import express from 'express';
 import { allowLocalDevCors } from './middleware/cors.js';
 import { prisma, ensureUser, shutdown } from './utils/db.js';
 import { callPiPlatform, verifyPiAccessToken } from './utils/piClient.js';
+import { normalizePolicyUrl } from './utils/urlPolicy.js';
 import {
   normalizePaymentRequest,
   createMockPaymentDto,
@@ -328,7 +329,7 @@ app.post('/api/orders/:orderId/deliver', async (request, response, next) => {
       data: {
         status: ORDER_STATUS.DELIVERED,
         deliveryMessage: String(request.body?.deliveryMessage || 'Delivery submitted by seller.').trim(),
-        deliveryLink: String(request.body?.deliveryLink || '').trim(),
+        deliveryLink: normalizePolicyUrl(request.body?.deliveryLink, 'deliveryLink', 'Delivery link'),
         deliveryFileName: String(request.body?.deliveryFileName || '').trim(),
         deliveryFileSize: String(request.body?.deliveryFileSize || '').trim(),
       },
@@ -873,8 +874,8 @@ function normalizeServiceInput(body) {
   const category = requiredString(body.category, 'category');
   const sellerId = requiredString(body.sellerId, 'sellerId');
   const sellerName = requiredString(body.sellerName, 'sellerName');
-  const portfolioUrl = optionalUrl(body.portfolioUrl, 'portfolioUrl');
-  const proofLink = optionalUrl(body.proofLink, 'proofLink');
+  const portfolioUrl = normalizePolicyUrl(body.portfolioUrl, 'portfolio', 'Portfolio URL');
+  const proofLink = normalizePolicyUrl(body.proofLink, 'proof', 'Proof link');
   const experience = optionalString(body.experience);
   const revisionPolicy = requiredString(body.revisionPolicy, 'revisionPolicy');
   const requirementsFromBuyer = requiredString(body.requirementsFromBuyer, 'requirementsFromBuyer');
@@ -887,9 +888,6 @@ function normalizeServiceInput(body) {
     revisionPolicy,
     requirementsFromBuyer,
   });
-  assertSafePortfolioUrl(portfolioUrl, 'portfolioUrl');
-  assertSafePortfolioUrl(proofLink, 'proofLink');
-
   return {
     id: body.id || createId('service'),
     title,
@@ -923,7 +921,7 @@ function normalizeOrderInput(body) {
     buyerName: requiredString(body.buyerName, 'buyerName'),
     buyerNote: String(body.buyerNote || '').trim(),
     requestSourceText: String(body.requestSourceText || '').trim(),
-    requestReferenceLink: String(body.requestReferenceLink || '').trim(),
+    requestReferenceLink: normalizePolicyUrl(body.requestReferenceLink, 'requestReference', 'Reference link'),
     requestFileName: String(body.requestFileName || '').trim(),
     requestFileSize: String(body.requestFileSize || '').trim(),
   };
@@ -1192,21 +1190,6 @@ function optionalString(value) {
   return String(value || '').trim();
 }
 
-function optionalUrl(value, fieldName) {
-  const text = optionalString(value);
-  if (!text) return '';
-
-  try {
-    const url = new URL(text);
-    if (!['https:', 'http:'].includes(url.protocol)) {
-      badRequest(`${fieldName} must be an http or https URL.`);
-    }
-    return url.toString();
-  } catch {
-    badRequest(`${fieldName} must be a valid URL.`);
-  }
-}
-
 function assertNoExternalContact(fields) {
   const contactPattern =
     /(@[\w.-]+\.\w{2,}|[\w.%+-]+@[\w.-]+\.[a-z]{2,}|(?:\+?\d[\d\s().-]{7,}\d)|\b(?:whatsapp|telegram|instagram|facebook|snapchat|tiktok|discord|wechat|line|signal|email|gmail|phone|mobile|call me|dm me|contact me)\b|(?:wa\.me|t\.me|telegram\.me|instagram\.com|facebook\.com|fb\.com|discord\.gg))/i;
@@ -1215,27 +1198,6 @@ function assertNoExternalContact(fields) {
     if (contactPattern.test(String(value || ''))) {
       badRequest(`${fieldName} cannot include external contact methods.`);
     }
-  }
-}
-
-function assertSafePortfolioUrl(value, fieldName) {
-  if (!value) return;
-
-  const blockedDomains = [
-    'wa.me',
-    't.me',
-    'telegram.me',
-    'instagram.com',
-    'facebook.com',
-    'fb.com',
-    'discord.gg',
-    'snapchat.com',
-    'tiktok.com',
-  ];
-  const hostname = new URL(value).hostname.replace(/^www\./, '').toLowerCase();
-
-  if (blockedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`))) {
-    badRequest(`${fieldName} cannot point to external messaging or social profiles.`);
   }
 }
 

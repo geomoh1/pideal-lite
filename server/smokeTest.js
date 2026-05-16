@@ -135,8 +135,8 @@ try {
     accent: '#f5b84b',
     summary: 'Smoke-test service for API-driven marketplace state.',
     terms: 'Buyer sends a short brief.',
-    portfolioUrl: 'https://example.com/smoke-portfolio',
-    proofLink: 'https://example.com/smoke-proof',
+    portfolioUrl: 'https://github.com/pideal/smoke-portfolio',
+    proofLink: 'https://docs.google.com/document/d/smoke-proof',
     experience: 'Smoke seller has sample digital-service experience.',
     revisionPolicy: 'One smoke-test revision is included.',
     requirementsFromBuyer: 'Buyer sends a clear brief and reference style.',
@@ -167,6 +167,26 @@ try {
   });
   assertEqual(rejectedContactListing.status, 400, 'Service listings must reject external contact methods.');
 
+  const rejectedUnsafePortfolio = await postJsonExpectFailure('/api/services', {
+    id: `${serviceId}-unsafe-link`,
+    title: 'Unsafe portfolio listing',
+    category: 'Design',
+    sellerId: 'smoke-seller',
+    sellerName: 'smoke.seller',
+    pricePi: 10,
+    depositPi: 4,
+    deliveryDays: 1,
+    icon: 'UL',
+    accent: '#f5b84b',
+    summary: 'Smoke-test service with a bad portfolio link.',
+    terms: 'Buyer sends a short brief.',
+    portfolioUrl: 'https://wa.me/123456789',
+    proofLink: 'https://github.com/pideal/smoke-proof',
+    revisionPolicy: 'One revision.',
+    requirementsFromBuyer: 'Brief and reference.',
+  });
+  assertEqual(rejectedUnsafePortfolio.status, 400, 'Portfolio links must reject messaging domains.');
+
   const approvedService = await postJson(
     `/api/services/${serviceId}/status`,
     { status: 'approved' },
@@ -193,13 +213,23 @@ try {
     buyerName: 'smoke.buyer',
     buyerNote: 'Please create a tiny logo for the smoke test.',
     requestSourceText: 'Smoke brand reference text.',
-    requestReferenceLink: 'https://example.com/smoke-reference',
+    requestReferenceLink: 'https://drive.google.com/file/d/smoke-reference/view',
     requestFileName: 'smoke-reference.png',
     requestFileSize: '14 KB',
   });
   const orderId = createdOrder.order.id;
   assertEqual(createdOrder.order.status, 'Requested', 'New orders must start as seller-review requests.');
   assertEqual(createdOrder.order.requestFileName, 'smoke-reference.png', 'Order request metadata must persist.');
+
+  const rejectedShortReference = await postJsonExpectFailure('/api/orders', {
+    serviceId,
+    buyerId: 'smoke-buyer-short-link',
+    buyerName: 'smoke.buyer.short',
+    buyerNote: 'Please use this reference.',
+    requestSourceText: 'Smoke brand reference text.',
+    requestReferenceLink: 'https://bit.ly/smoke-reference',
+  });
+  assertEqual(rejectedShortReference.status, 400, 'Request reference links must reject short links.');
 
   const rejectedEarlyPayment = await postJsonExpectFailure(`/api/pi/payments/${depositPaymentId}-early/approve`, {
     orderId,
@@ -263,9 +293,15 @@ try {
   const started = await postJson(`/api/orders/${orderId}/start`, {});
   assertEqual(started.order.status, 'In Progress', 'Paid orders must be startable.');
 
+  const rejectedUnsafeDelivery = await postJsonExpectFailure(`/api/orders/${orderId}/deliver`, {
+    deliveryMessage: 'Smoke delivery finished.',
+    deliveryLink: 'https://t.me/smoke-delivery',
+  });
+  assertEqual(rejectedUnsafeDelivery.status, 400, 'Delivery links must reject messaging domains.');
+
   const delivered = await postJson(`/api/orders/${orderId}/deliver`, {
     deliveryMessage: 'Smoke delivery finished.',
-    deliveryLink: 'https://example.com/smoke-delivery',
+    deliveryLink: 'https://www.dropbox.com/s/smoke-delivery.zip',
     deliveryFileName: 'smoke-delivery.zip',
     deliveryFileSize: '20 KB',
   });
