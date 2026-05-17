@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import {
   authenticateWithPi,
+  completeIncompletePiPayment,
   confirmPiDeliveryPayment,
   createPiDepositPayment,
   getPiIntegrationStatus,
@@ -43,6 +44,7 @@ import {
   deliverOrder as deliverOrderApi,
   disputeOrder as disputeOrderApi,
   fetchNotifications as fetchNotificationsApi,
+  fetchCurrentSession,
   fetchMarketplaceData,
   markSellerPayoutPaid as markSellerPayoutPaidApi,
   removeServiceById,
@@ -231,12 +233,35 @@ function App() {
   useEffect(() => {
     let isMounted = true;
 
-    refreshAppData({ shouldApply: () => isMounted });
+    (async () => {
+      try {
+        const sessionUser = await fetchCurrentSession();
+        if (!isMounted) return;
+
+        const restoredUser = buildAppUser(
+          {
+            uid: sessionUser.uid,
+            username: sessionUser.username,
+            walletStatus: 'Backend session restored',
+            authProvider: 'server-session',
+          },
+          sessionUser,
+        );
+        setUser(restoredUser);
+        if (restoredUser.appRole !== 'admin' && selectedMode === 'Admin') {
+          setSelectedMode('Browse');
+        }
+        await refreshAppData({ actor: restoredUser, shouldApply: () => isMounted });
+        void refreshNotifications(restoredUser);
+      } catch {
+        await refreshAppData({ shouldApply: () => isMounted });
+      }
+    })();
 
     return () => {
       isMounted = false;
     };
-  }, [refreshAppData]);
+  }, [refreshAppData, refreshNotifications]);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -369,12 +394,31 @@ function App() {
 
   async function attachServerRole(authenticatedUser) {
     const sessionUser = await syncUserSession(authenticatedUser);
+    if (authenticatedUser.incompletePayments?.length) {
+      await recoverIncompletePayments(authenticatedUser.incompletePayments);
+    }
+
+    return buildAppUser(authenticatedUser, sessionUser);
+  }
+
+  async function recoverIncompletePayments(incompletePayments) {
+    const recoveries = await Promise.allSettled(
+      incompletePayments.map((payment) => completeIncompletePiPayment(payment)),
+    );
+    recoveries
+      .filter((result) => result.status === 'rejected')
+      .forEach((result) => console.error('Incomplete Pi payment could not be completed by the backend.', result.reason));
+  }
+
+  function buildAppUser(authenticatedUser, sessionUser) {
     return {
       ...authenticatedUser,
       uid: sessionUser.uid,
       username: sessionUser.username,
       appRole: sessionUser.role,
       sellerStatus: sessionUser.sellerStatus,
+      piWalletAddress: sessionUser.piWalletAddress || '',
+      piWalletVerifiedAt: sessionUser.piWalletVerifiedAt || '',
     };
   }
 
@@ -465,8 +509,6 @@ function App() {
     const listing = {
       title: newService.title.trim(),
       category: newService.category,
-      sellerId: user.uid,
-      sellerName: user.username,
       sellerHandle: `@${user.username}`,
       pricePi,
       depositPi,
@@ -534,8 +576,6 @@ function App() {
 
     const orderRequest = {
       serviceId: service.id,
-      buyerId: buyer.uid,
-      buyerName: buyer.username,
       buyerNote: requestNote.trim(),
       requestSourceText: requestAsset.sourceText.trim(),
       requestReferenceLink: requestAsset.referenceLink.trim(),
@@ -798,8 +838,6 @@ function App() {
       const report = await createReportApi({
         serviceId: service.id,
         serviceTitle: service.title,
-        reporterId: user?.uid,
-        reporterName: user?.username,
         reason: 'Buyer reported this digital service for admin review.',
       });
       setFlowNotice('Report sent to admin moderation.');

@@ -17,6 +17,7 @@ function apiPath(path) {
 async function requestJson(path, options = {}) {
   const response = await fetch(apiPath(path), {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
@@ -41,22 +42,17 @@ function postJson(path, body) {
 function postJsonAs(path, body, actor) {
   return requestJson(path, {
     method: 'POST',
-    headers: actorHeaders(actor),
     body: JSON.stringify(body),
   });
 }
 
-function actorHeaders(actor) {
-  return actor?.uid ? { 'X-PiDeal-User-Id': actor.uid } : {};
-}
-
 export async function fetchMarketplaceData(actor) {
+  const canLoadPrivateData = Boolean(actor?.uid);
+  const isAdmin = actor?.appRole === 'admin' || actor?.role === 'admin';
   const [servicesData, ordersData, reportsData] = await Promise.all([
     requestJson('/api/services'),
-    requestJson('/api/orders', {
-      headers: actorHeaders(actor),
-    }),
-    requestJson('/api/reports'),
+    canLoadPrivateData ? requestJson('/api/orders') : Promise.resolve({ orders: [] }),
+    isAdmin ? requestJson('/api/reports') : Promise.resolve({ reports: [] }),
   ]);
 
   return {
@@ -67,9 +63,7 @@ export async function fetchMarketplaceData(actor) {
 }
 
 export async function fetchNotifications(actor) {
-  const data = await requestJson('/api/notifications', {
-    headers: actorHeaders(actor),
-  });
+  const data = await requestJson('/api/notifications');
 
   return {
     notifications: data.notifications || [],
@@ -79,6 +73,11 @@ export async function fetchNotifications(actor) {
 
 export async function syncUserSession(user) {
   const data = await postJson('/api/session', { accessToken: user.accessToken });
+  return data.user;
+}
+
+export async function fetchCurrentSession() {
+  const data = await requestJson('/api/session');
   return data.user;
 }
 

@@ -140,7 +140,7 @@ All Pi auth and payment logic is isolated in `src/piPlaceholders.js`:
 - `confirmPiDeliveryPayment`
 - `completeIncompletePiPayment`
 
-The frontend uses the official SDK calls `Pi.authenticate(...)` and `Pi.createPayment(...)` when the SDK is available. Authentication requests the `username` and `payments` scopes so the Pi SDK can surface incomplete in-flight payments. After Pi authentication succeeds, the frontend sends only the Pi `accessToken` to `POST /api/session`; the backend verifies it with `GET https://api.minepi.com/v2/me` using `Authorization: Bearer <accessToken>` and creates/finds the local `User` from the verified Pi `uid`.
+The frontend uses the official SDK calls `Pi.authenticate(...)` and `Pi.createPayment(...)` when the SDK is available. Authentication requests the `username` and `payments` scopes so the Pi SDK can surface incomplete in-flight payments. After Pi authentication succeeds, the frontend sends only the Pi `accessToken` to `POST /api/session`; the backend verifies it with `GET https://api.minepi.com/v2/me` using `Authorization: Bearer <accessToken>`, creates/finds the local `User` from the verified Pi `uid`, and sets an httpOnly session cookie for later authenticated API calls.
 
 Important: official Pi payments require server-side approval and server-side completion before an order should be treated as truly paid. PiDeal Lite now routes approval, completion, and incomplete-payment recovery through the backend endpoints below. The React frontend only advances escrow state after the backend completion endpoint returns the updated order.
 
@@ -177,6 +177,8 @@ POST /api/seller-payouts/:payoutId/mark-paid
 GET  /api/orders/:orderId/status
 
 POST /api/session
+GET  /api/session
+GET  /api/notifications
 POST /api/users/payout-wallet
 
 GET  /api/reports
@@ -207,6 +209,7 @@ PI_API_KEY=
 FRONTEND_ORIGIN=http://localhost:5173
 FRONTEND_ORIGINS=
 PUBLIC_SITE_URL=http://localhost:4000
+SESSION_SECRET=replace-with-a-long-random-secret
 PI_ADMIN_USERNAMES=mohammedabobaker
 PLATFORM_FEE_RATE=0.05
 ESCROW_DISPUTE_WINDOW_HOURS=72
@@ -221,7 +224,7 @@ VITE_PUBLIC_SITE_URL=
 VITE_ENABLE_PI_SDK=false
 ```
 
-Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API key. In production, configure `PI_NETWORK_API_KEY` or `PI_API_KEY` and set `PI_USE_MOCK_PAYMENTS=false`.
+Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API key. In production, configure `PI_NETWORK_API_KEY` or `PI_API_KEY`, set `PI_USE_MOCK_PAYMENTS=false`, and set a stable `SESSION_SECRET` so httpOnly sessions survive backend restarts.
 
 `FRONTEND_ORIGIN` should point to the deployed frontend URL. `FRONTEND_ORIGINS` can hold comma-separated extra origins. The backend also allows localhost and HTTPS Vercel preview domains ending in `.vercel.app`.
 
@@ -286,7 +289,7 @@ To make a real Pi user an admin after their first login creates a `User` row, ei
 UPDATE "User" SET role = 'admin' WHERE id = '<real-pi-user-uid>';
 ```
 
-For local testing, run the same SQL against your configured PostgreSQL database. In production, do this in the managed database/admin console. Real Pi sessions now verify the Pi access token before creating/finding the user. The temporary `X-PiDeal-User-Id` admin header is still an MVP fallback for moderation calls and should be replaced with a backend-issued session token before a public launch.
+For local testing, run the same SQL against your configured PostgreSQL database. In production, do this in the managed database/admin console. Real Pi sessions now verify the Pi access token before creating/finding the user, then issue an httpOnly cookie. The `X-PiDeal-User-Id` fallback is disabled in production and is only kept for non-production smoke/development helpers.
 
 Backend smoke test:
 

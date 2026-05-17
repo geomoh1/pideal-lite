@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import crypto from 'node:crypto';
 import express from 'express';
 
 import { allowLocalDevCors } from './middleware/cors.js';
@@ -31,6 +32,16 @@ const PI_ADMIN_USERNAMES = parseEnvList(process.env.PI_ADMIN_USERNAMES ?? 'moham
   .map(normalizePiUsername)
   .filter(Boolean);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const ALLOW_INSECURE_ACTOR_HEADER =
+  !IS_PRODUCTION && process.env.ALLOW_INSECURE_ACTOR_HEADER !== 'false';
+const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'pideal_session';
+const SESSION_TTL_MS = normalizePositiveNumber(process.env.SESSION_TTL_HOURS, 12) * 60 * 60 * 1000;
+const CONFIGURED_SESSION_SECRET =
+  process.env.SESSION_SECRET ||
+  process.env.PIDEAL_SESSION_SECRET ||
+  PI_PLATFORM_API_KEY;
+const SESSION_SECRET = CONFIGURED_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_SECRET_IS_EPHEMERAL = !CONFIGURED_SESSION_SECRET;
 
 const ORDER_STATUS = {
   REQUESTED: 'Requested',
@@ -205,6 +216,12 @@ const SELLER_PAYOUT_INCLUDE = {
   },
 };
 
+const sessionRateLimit = createRateLimit({ keyPrefix: 'session', windowMs: 60_000, max: 30 });
+const orderRateLimit = createRateLimit({ keyPrefix: 'orders', windowMs: 60_000, max: 120 });
+const paymentRateLimit = createRateLimit({ keyPrefix: 'payments', windowMs: 60_000, max: 80 });
+const reportRateLimit = createRateLimit({ keyPrefix: 'reports', windowMs: 60_000, max: 40 });
+
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '256kb' }));
 app.use(allowLocalDevCors);
 
@@ -226,7 +243,7 @@ app.get('/api/health', async (request, response, next) => {
   }
 });
 
-app.post('/api/session', async (request, response, next) => {
+app.post('/api/session', sessionRateLimit, async (request, response, next) => {
   try {
     const accessToken = String(request.body?.accessToken || '').trim();
     if (!accessToken) {
@@ -236,6 +253,7 @@ app.post('/api/session', async (request, response, next) => {
     const sessionIdentity = { ...(await verifyPiAccessToken(accessToken)), verifiedPi: true };
     const role = getSessionRole(sessionIdentity);
     const user = await ensureUser(sessionIdentity.uid, sessionIdentity.username, role);
+    setSessionCookie(response, user);
 
     return response.json({
       ok: true,
@@ -246,24 +264,17 @@ app.post('/api/session', async (request, response, next) => {
   }
 });
 
-app.get('/api/notifications', async (request, response, next) => {
+app.get('/api/session', requireAuth, async (request, response) => {
+  return response.json({
+    ok: true,
+    user: serializeUser(request.user),
+  });
+});
+
+app.get('/api/notifications', requireAuth, async (request, response, next) => {
   try {
     await releaseEligibleEscrows();
-    const userId = getActorUserId(request);
-
-    if (!userId) {
-      return response.status(401).json({ ok: false, error: 'User id is required for notifications.' });
-    }
-
-    const sessionUser = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!sessionUser) {
-      return response.status(404).json({ ok: false, error: 'Notification user was not found.' });
-    }
-
-    const notifications = await getNotificationsForUser(sessionUser);
+    const notifications = await getNotificationsForUser(request.user);
 
     return response.json({
       ok: true,
@@ -306,25 +317,12 @@ app.get('/api/seller-payouts', requireAdmin, async (request, response, next) => 
   }
 });
 
-app.post('/api/users/payout-wallet', async (request, response, next) => {
+app.post('/api/users/payout-wallet', orderRateLimit, requireAuth, async (request, response, next) => {
   try {
-    const userId = getActorUserId(request);
-
-    if (!userId) {
-      return response.status(401).json({ ok: false, error: 'User id is required to update payout wallet.' });
-    }
-
     const walletAddress = normalizePiWalletAddress(request.body?.piWalletAddress);
-    const existingUser = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!existingUser) {
-      return response.status(404).json({ ok: false, error: 'User was not found.' });
-    }
 
     const user = await prisma.user.update({
-      where: { id: userId },
+      where: { id: request.user.id },
       data: {
         piWalletAddress: walletAddress,
         piWalletVerifiedAt: new Date(),
@@ -463,10 +461,10 @@ app.get('/api/services', async (request, response, next) => {
   }
 });
 
-app.post('/api/services', async (request, response, next) => {
+app.post('/api/services', orderRateLimit, requireAuth, async (request, response, next) => {
   try {
     const listing = normalizeServiceInput(request.body || {});
-    const seller = await ensureUser(listing.sellerId, listing.sellerName, 'user');
+    const seller = request.user;
 
     if (seller.sellerStatus === 'blocked') {
       return response.status(403).json({ ok: false, error: 'This seller is blocked from publishing services.' });
@@ -479,7 +477,7 @@ app.post('/api/services', async (request, response, next) => {
         title: listing.title,
         category: listing.category,
         sellerId: seller.id,
-        sellerHandle: listing.sellerHandle,
+        sellerHandle: listing.sellerHandle || `@${seller.username}`,
         pricePi: listing.pricePi,
         depositPi: listing.depositPi,
         rating: 0,
@@ -558,11 +556,20 @@ app.post('/api/users/:userId/seller-status', requireAdmin, async (request, respo
   }
 });
 
-app.get('/api/orders', async (request, response, next) => {
+app.get('/api/orders', orderRateLimit, requireAuth, async (request, response, next) => {
   try {
     await releaseEligibleEscrows();
-    const viewer = await getRequestViewer(request);
+    const viewer = request.user;
+    const where = viewer.role === 'admin'
+      ? {}
+      : {
+          OR: [
+            { buyerId: viewer.id },
+            { sellerId: viewer.id },
+          ],
+        };
     const orders = await prisma.order.findMany({
+      where,
       include: ORDER_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
@@ -573,7 +580,7 @@ app.get('/api/orders', async (request, response, next) => {
   }
 });
 
-app.post('/api/orders', async (request, response, next) => {
+app.post('/api/orders', orderRateLimit, requireAuth, async (request, response, next) => {
   try {
     const orderInput = normalizeOrderInput(request.body || {});
     const service = await prisma.service.findUnique({
@@ -587,8 +594,11 @@ app.post('/api/orders', async (request, response, next) => {
     if (service.seller?.sellerStatus === 'blocked') {
       return response.status(403).json({ ok: false, error: 'This seller is currently blocked.' });
     }
+    if (service.sellerId === request.user.id) {
+      return response.status(403).json({ ok: false, error: 'Sellers cannot request their own services.' });
+    }
 
-    const buyer = await ensureUser(orderInput.buyerId, orderInput.buyerName, 'user');
+    const buyer = request.user;
 
     const order = await prisma.order.create({
       data: {
@@ -618,12 +628,9 @@ app.post('/api/orders', async (request, response, next) => {
   }
 });
 
-app.post('/api/orders/:orderId/accept', async (request, response, next) => {
+app.post('/api/orders/:orderId/accept', orderRateLimit, requireOrderSeller, async (request, response, next) => {
   try {
-    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
-    if (!order) {
-      return response.status(404).json({ ok: false, error: 'Order was not found.' });
-    }
+    const order = request.order;
     if (order.status !== ORDER_STATUS.REQUESTED) {
       return response.status(409).json({ ok: false, error: 'Only requested orders can be accepted by the seller.' });
     }
@@ -634,18 +641,15 @@ app.post('/api/orders/:orderId/accept', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.sellerId }) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, request.user) });
   } catch (error) {
     return next(error);
   }
 });
 
-app.post('/api/orders/:orderId/start', async (request, response, next) => {
+app.post('/api/orders/:orderId/start', orderRateLimit, requireOrderSeller, async (request, response, next) => {
   try {
-    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
-    if (!order) {
-      return response.status(404).json({ ok: false, error: 'Order was not found.' });
-    }
+    const order = request.order;
     if (![ORDER_STATUS.DEPOSIT_PAID, ORDER_STATUS.PAID].includes(order.status)) {
       return response.status(409).json({ ok: false, error: 'Only deposit-paid orders can move to In Progress.' });
     }
@@ -656,18 +660,15 @@ app.post('/api/orders/:orderId/start', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.sellerId }) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, request.user) });
   } catch (error) {
     return next(error);
   }
 });
 
-app.post('/api/orders/:orderId/deliver', async (request, response, next) => {
+app.post('/api/orders/:orderId/deliver', orderRateLimit, requireOrderSeller, async (request, response, next) => {
   try {
-    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
-    if (!order) {
-      return response.status(404).json({ ok: false, error: 'Order was not found.' });
-    }
+    const order = request.order;
     if (order.status !== ORDER_STATUS.IN_PROGRESS) {
       return response.status(409).json({ ok: false, error: 'Only orders in progress can be delivered.' });
     }
@@ -684,18 +685,15 @@ app.post('/api/orders/:orderId/deliver', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.sellerId }) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, request.user) });
   } catch (error) {
     return next(error);
   }
 });
 
-app.post('/api/orders/:orderId/confirm', async (request, response, next) => {
+app.post('/api/orders/:orderId/confirm', orderRateLimit, requireOrderBuyer, async (request, response, next) => {
   try {
-    const order = await findOrderById(request.params.orderId);
-    if (!order) {
-      return response.status(404).json({ ok: false, error: 'Order was not found.' });
-    }
+    const order = request.order;
     if (order.status !== ORDER_STATUS.DELIVERED) {
       return response.status(409).json({ ok: false, error: 'Only delivered orders can be confirmed.' });
     }
@@ -729,23 +727,20 @@ app.post('/api/orders/:orderId/confirm', async (request, response, next) => {
       return updatedOrder;
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.buyerId }) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, request.user) });
   } catch (error) {
     return next(error);
   }
 });
 
-app.post('/api/orders/:orderId/review', async (request, response, next) => {
+app.post('/api/orders/:orderId/review', orderRateLimit, requireOrderBuyer, async (request, response, next) => {
   try {
     const rating = Number(request.body?.rating);
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
       return response.status(400).json({ ok: false, error: 'Rating must be an integer from 1 to 5.' });
     }
 
-    const order = await prisma.order.findUnique({ where: { id: request.params.orderId } });
-    if (!order) {
-      return response.status(404).json({ ok: false, error: 'Order was not found.' });
-    }
+    const order = request.order;
     if (order.status !== ORDER_STATUS.COMPLETED) {
       return response.status(409).json({ ok: false, error: 'Only completed orders can be reviewed.' });
     }
@@ -769,20 +764,23 @@ app.post('/api/orders/:orderId/review', async (request, response, next) => {
     await refreshServiceRating(order.serviceId);
     const updatedOrder = await findOrderById(order.id);
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder, { id: updatedOrder.buyerId }) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, request.user) });
   } catch (error) {
     return next(error);
   }
 });
 
-app.post('/api/orders/:orderId/cancel', async (request, response, next) => {
+app.post('/api/orders/:orderId/cancel', orderRateLimit, requireOrderParticipant, async (request, response, next) => {
   try {
-    const order = await findOrderById(request.params.orderId);
-    if (!order) {
-      return response.status(404).json({ ok: false, error: 'Order was not found.' });
-    }
+    const order = request.order;
     if (![ORDER_STATUS.REQUESTED, ORDER_STATUS.PENDING_PAYMENT].includes(order.status)) {
       return response.status(409).json({ ok: false, error: 'Funded orders must be resolved through delivery, dispute, release, or refund.' });
+    }
+    if (order.status === ORDER_STATUS.REQUESTED && ![order.buyerId, order.sellerId].includes(request.user.id)) {
+      return response.status(403).json({ ok: false, error: 'Only the buyer or seller can cancel a requested order.' });
+    }
+    if (order.status === ORDER_STATUS.PENDING_PAYMENT && order.buyerId !== request.user.id) {
+      return response.status(403).json({ ok: false, error: 'Only the buyer can cancel after seller acceptance.' });
     }
 
     const updatedOrder = await prisma.order.update({
@@ -795,19 +793,15 @@ app.post('/api/orders/:orderId/cancel', async (request, response, next) => {
       include: ORDER_INCLUDE,
     });
 
-    const viewer = await getRequestViewer(request);
-    return response.json({ ok: true, order: serializeOrder(updatedOrder, viewer) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, request.user) });
   } catch (error) {
     return next(error);
   }
 });
 
-app.post('/api/orders/:orderId/dispute', async (request, response, next) => {
+app.post('/api/orders/:orderId/dispute', orderRateLimit, requireOrderBuyer, async (request, response, next) => {
   try {
-    const order = await findOrderById(request.params.orderId);
-    if (!order) {
-      return response.status(404).json({ ok: false, error: 'Order was not found.' });
-    }
+    const order = request.order;
     if (![ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(order.status)) {
       return response.status(409).json({ ok: false, error: 'Only delivered or completed orders can be disputed.' });
     }
@@ -816,7 +810,6 @@ app.post('/api/orders/:orderId/dispute', async (request, response, next) => {
     }
 
     const disputedAt = new Date();
-    const viewer = await getRequestViewer(request);
     const updatedOrder = await prisma.$transaction(async (tx) => {
       const updatedOrder = await tx.order.update({
         where: { id: request.params.orderId },
@@ -831,7 +824,7 @@ app.post('/api/orders/:orderId/dispute', async (request, response, next) => {
       await tx.escrowEvent.create({
         data: {
           orderId: request.params.orderId,
-          actorId: viewer?.id || null,
+          actorId: request.user.id,
           type: ESCROW_EVENT_TYPE.DISPUTE_OPENED,
           amountPi: Number(order.escrowHeldPi || calculatePaidTotal(order)),
           status: ESCROW_STATUS.DISPUTED,
@@ -842,7 +835,7 @@ app.post('/api/orders/:orderId/dispute', async (request, response, next) => {
       return updatedOrder;
     });
 
-    return response.json({ ok: true, order: serializeOrder(updatedOrder, viewer) });
+    return response.json({ ok: true, order: serializeOrder(updatedOrder, request.user) });
   } catch (error) {
     return next(error);
   }
@@ -943,7 +936,7 @@ app.post('/api/orders/:orderId/release', requireAdmin, async (request, response,
   }
 });
 
-app.get('/api/reports', async (request, response, next) => {
+app.get('/api/reports', reportRateLimit, requireAdmin, async (request, response, next) => {
   try {
     const reports = await prisma.report.findMany({
       include: REPORT_INCLUDE,
@@ -956,21 +949,16 @@ app.get('/api/reports', async (request, response, next) => {
   }
 });
 
-app.post('/api/reports', async (request, response, next) => {
+app.post('/api/reports', reportRateLimit, requireAuth, async (request, response, next) => {
   try {
     const service = request.body?.serviceId
       ? await prisma.service.findUnique({ where: { id: request.body.serviceId } })
       : null;
 
-    const reporterId = request.body?.reporterId || null;
-    if (reporterId) {
-      await ensureUser(reporterId, request.body?.reporterName || 'Pi reporter', 'user');
-    }
-
     const report = await prisma.report.create({
       data: {
         serviceId: service?.id || null,
-        reporterId,
+        reporterId: request.user.id,
         serviceTitle: String(request.body?.serviceTitle || service?.title || 'Reported service').trim(),
         reason: String(request.body?.reason || 'Buyer reported this digital service for admin review.').trim(),
         status: 'open',
@@ -998,10 +986,10 @@ app.post('/api/reports/:reportId/resolve', requireAdmin, async (request, respons
   }
 });
 
-app.post('/api/pi/payments/incomplete', handleIncompletePiPayment);
-app.post('/api/payments/incomplete', handleIncompletePiPayment);
+app.post('/api/pi/payments/incomplete', paymentRateLimit, requireAuth, handleIncompletePiPayment);
+app.post('/api/payments/incomplete', paymentRateLimit, requireAuth, handleIncompletePiPayment);
 
-app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) => {
+app.post('/api/pi/payments/:paymentId/approve', paymentRateLimit, requireAuth, async (request, response, next) => {
   try {
     const { paymentId } = request.params;
     const paymentRequest = normalizePaymentRequest(paymentId, request.body || {});
@@ -1014,6 +1002,7 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
     if (!orderForPayment) {
       return response.status(404).json({ ok: false, error: 'Order must be created before payment approval.' });
     }
+    assertOrderBuyer(orderForPayment, request.user, 'Only the buyer can approve payment for this order.');
 
     const serverPaymentRequest = resolveServerPaymentRequest(orderForPayment, paymentRequest);
 
@@ -1056,7 +1045,7 @@ app.post('/api/pi/payments/:paymentId/approve', async (request, response, next) 
       ok: true,
       mock: useMockPayment,
       payment: serializePayment(payment),
-      order: serializeOrder(storedOrder, { id: storedOrder?.buyerId }),
+      order: serializeOrder(storedOrder, request.user),
       piPayment,
     });
   } catch (error) {
@@ -1087,6 +1076,7 @@ async function handleIncompletePiPayment(request, response, next) {
       if (!orderForPayment) {
         return response.status(404).json({ ok: false, error: 'Order for incomplete payment was not found.' });
       }
+      assertOrderBuyer(orderForPayment, request.user, 'Only the buyer can recover payment for this order.');
 
       const serverPaymentRequest = resolveServerPaymentRequest(orderForPayment, {
         paymentId: input.paymentId,
@@ -1117,13 +1107,14 @@ async function handleIncompletePiPayment(request, response, next) {
       existingPayment = await findPaymentWithOrder(input.paymentId);
       action = 'approved_missing_server_record';
     }
+    assertOrderBuyer(existingPayment.order, request.user, 'Only the buyer can recover payment for this order.');
 
     if (existingPayment.status === 'completed') {
       return response.json({
         ok: true,
         action: 'already_completed',
         payment: serializePayment(existingPayment),
-        order: serializeOrder(existingPayment.order, { id: existingPayment.order?.buyerId }),
+        order: serializeOrder(existingPayment.order, request.user),
       });
     }
 
@@ -1133,7 +1124,7 @@ async function handleIncompletePiPayment(request, response, next) {
         action,
         needsTxid: true,
         payment: serializePayment(existingPayment),
-        order: serializeOrder(existingPayment.order, { id: existingPayment.order?.buyerId }),
+        order: serializeOrder(existingPayment.order, request.user),
       });
     }
 
@@ -1225,7 +1216,7 @@ async function handleIncompletePiPayment(request, response, next) {
       action: 'completed',
       mock: useMockPayment,
       payment: serializePayment(payment),
-      order: serializeOrder(storedOrder, { id: storedOrder?.buyerId }),
+      order: serializeOrder(storedOrder, request.user),
       piPayment,
     });
   } catch (error) {
@@ -1233,7 +1224,7 @@ async function handleIncompletePiPayment(request, response, next) {
   }
 }
 
-app.post('/api/pi/payments/:paymentId/complete', async (request, response, next) => {
+app.post('/api/pi/payments/:paymentId/complete', paymentRateLimit, requireAuth, async (request, response, next) => {
   try {
     const { paymentId } = request.params;
     const { orderId, txid } = request.body || {};
@@ -1261,6 +1252,7 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
     if (existingPayment.orderId !== orderId) {
       return response.status(409).json({ ok: false, error: 'Payment does not belong to this order.' });
     }
+    assertOrderBuyer(existingPayment.order, request.user, 'Only the buyer can complete payment for this order.');
 
     if (!['approved', 'completed'].includes(existingPayment.status)) {
       return response.status(409).json({ ok: false, error: 'Payment must be approved before completion.' });
@@ -1347,7 +1339,7 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
       ok: true,
       mock: useMockPayment,
       payment: serializePayment(payment),
-      order: serializeOrder(storedOrder, { id: storedOrder?.buyerId }),
+      order: serializeOrder(storedOrder, request.user),
       piPayment,
     });
   } catch (error) {
@@ -1355,20 +1347,11 @@ app.post('/api/pi/payments/:paymentId/complete', async (request, response, next)
   }
 });
 
-app.get('/api/orders/:orderId/status', async (request, response, next) => {
+app.get('/api/orders/:orderId/status', orderRateLimit, requireOrderParticipant, async (request, response, next) => {
   try {
     await releaseEligibleEscrows();
     const order = await findOrderById(request.params.orderId);
-
-    if (!order) {
-      return response.status(404).json({
-        ok: false,
-        error: 'Order status is not available on the payment server yet.',
-      });
-    }
-
-    const viewer = await getRequestViewer(request);
-    return response.json({ ok: true, order: serializeOrder(order, viewer) });
+    return response.json({ ok: true, order: serializeOrder(order || request.order, request.user) });
   } catch (error) {
     return next(error);
   }
@@ -1386,6 +1369,9 @@ app.use((error, request, response, next) => {
 const server = app.listen(PORT, () => {
   console.log(`PiDeal backend listening on http://127.0.0.1:${PORT}`);
   console.log(`Pi payments mode: ${USE_MOCK_PAYMENTS ? 'mock' : 'pi-platform-api'}`);
+  if (SESSION_SECRET_IS_EPHEMERAL) {
+    console.warn('SESSION_SECRET is not configured. Using an ephemeral session secret for this process.');
+  }
 });
 
 process.once('SIGINT', () => shutdown(server));
@@ -1404,8 +1390,7 @@ function normalizeServiceInput(body) {
   const summary = requiredString(body.summary, 'summary');
   const terms = requiredString(body.terms, 'terms');
   const category = requiredString(body.category, 'category');
-  const sellerId = requiredString(body.sellerId, 'sellerId');
-  const sellerName = requiredString(body.sellerName, 'sellerName');
+  const sellerName = optionalString(body.sellerName);
   const portfolioUrl = normalizePolicyUrl(body.portfolioUrl, 'portfolio', 'Portfolio URL');
   const proofLink = normalizePolicyUrl(body.proofLink, 'proof', 'Proof link');
   const experience = optionalString(body.experience);
@@ -1424,9 +1409,8 @@ function normalizeServiceInput(body) {
     id: body.id || createId('service'),
     title,
     category,
-    sellerId,
     sellerName,
-    sellerHandle: body.sellerHandle || `@${sellerName}`,
+    sellerHandle: optionalString(body.sellerHandle),
     pricePi,
     depositPi,
     deliveryDays,
@@ -1449,8 +1433,6 @@ function normalizeOrderInput(body) {
   return {
     id: body.id || createId('order'),
     serviceId: requiredString(body.serviceId, 'serviceId'),
-    buyerId: requiredString(body.buyerId, 'buyerId'),
-    buyerName: requiredString(body.buyerName, 'buyerName'),
     buyerNote: String(body.buyerNote || '').trim(),
     requestSourceText: String(body.requestSourceText || '').trim(),
     requestReferenceLink: normalizePolicyUrl(body.requestReferenceLink, 'requestReference', 'Reference link'),
@@ -2128,15 +2110,11 @@ function calculateEscrowPaidTotal(order) {
 
 async function requireAdmin(request, response, next) {
   try {
-    const actorUserId = getActorUserId(request);
+    const actor = await resolveRequestUser(request);
 
-    if (!actorUserId) {
-      return response.status(401).json({ ok: false, error: 'Admin user id is required.' });
+    if (!actor) {
+      return response.status(401).json({ ok: false, error: 'Admin login is required.' });
     }
-
-    const actor = await prisma.user.findUnique({
-      where: { id: actorUserId },
-    });
 
     if (actor?.role !== 'admin') {
       return response.status(403).json({ ok: false, error: 'Only admins can moderate services and reports.' });
@@ -2149,7 +2127,106 @@ async function requireAdmin(request, response, next) {
   }
 }
 
-function getActorUserId(request) {
+async function requireAuth(request, response, next) {
+  try {
+    const user = await resolveRequestUser(request);
+
+    if (!user) {
+      return response.status(401).json({ ok: false, error: 'PiDeal login is required.' });
+    }
+
+    request.user = user;
+    request.actor = user;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function requireOrderParticipant(request, response, next) {
+  return requireOrderAccess(request, response, next, ['buyer', 'seller', 'admin']);
+}
+
+async function requireOrderSeller(request, response, next) {
+  return requireOrderAccess(request, response, next, ['seller']);
+}
+
+async function requireOrderBuyer(request, response, next) {
+  return requireOrderAccess(request, response, next, ['buyer']);
+}
+
+async function requireOrderAccess(request, response, next, allowedRoles) {
+  try {
+    const user = await resolveRequestUser(request);
+    if (!user) {
+      return response.status(401).json({ ok: false, error: 'PiDeal login is required.' });
+    }
+
+    const orderId = String(request.params?.orderId || request.body?.orderId || '').trim();
+    if (!orderId) {
+      return response.status(400).json({ ok: false, error: 'Order id is required.' });
+    }
+
+    const order = await findOrderById(orderId);
+    if (!order) {
+      return response.status(404).json({ ok: false, error: 'Order was not found.' });
+    }
+
+    const role = getOrderRole(order, user);
+    if (!allowedRoles.includes(role)) {
+      return response.status(403).json({ ok: false, error: 'You are not allowed to perform this order action.' });
+    }
+
+    request.user = user;
+    request.actor = user;
+    request.order = order;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+function assertOrderBuyer(order, user, message) {
+  if (getOrderRole(order, user) !== 'buyer') {
+    forbidden(message || 'Only the buyer can perform this order action.');
+  }
+}
+
+function getOrderRole(order, user) {
+  if (!order || !user?.id) return '';
+  if (order.buyerId === user.id) return 'buyer';
+  if (order.sellerId === user.id) return 'seller';
+  if (user.role === 'admin') return 'admin';
+  return '';
+}
+
+async function resolveRequestUser(request) {
+  if (request.user) return request.user;
+
+  const sessionUserId = verifySessionCookie(request);
+  if (sessionUserId) {
+    const user = await prisma.user.findUnique({ where: { id: sessionUserId } });
+    if (user) {
+      request.user = user;
+      request.actor = user;
+      return user;
+    }
+  }
+
+  const fallbackUserId = getDevelopmentActorUserId(request);
+  if (!fallbackUserId) return null;
+
+  const user = await prisma.user.findUnique({ where: { id: fallbackUserId } });
+  if (user) {
+    request.user = user;
+    request.actor = user;
+  }
+  return user;
+}
+
+function getDevelopmentActorUserId(request) {
+  if (!ALLOW_INSECURE_ACTOR_HEADER) return '';
+
   return (
     request.get('x-pideal-user-id') ||
     request.body?.actorUserId ||
@@ -2158,13 +2235,122 @@ function getActorUserId(request) {
   ).trim();
 }
 
-async function getRequestViewer(request) {
-  const userId = getActorUserId(request);
-  if (!userId) return null;
+function setSessionCookie(response, user) {
+  const token = createSessionToken(user);
+  const attributes = [
+    `${SESSION_COOKIE_NAME}=${token}`,
+    'Path=/',
+    'HttpOnly',
+    `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+    `SameSite=${isSecureSessionCookie() ? 'None' : 'Lax'}`,
+  ];
 
-  return prisma.user.findUnique({
-    where: { id: userId },
-  });
+  if (isSecureSessionCookie()) {
+    attributes.push('Secure');
+  }
+
+  response.setHeader('Set-Cookie', attributes.join('; '));
+}
+
+function createSessionToken(user) {
+  const now = Date.now();
+  const payload = {
+    sub: user.id,
+    iat: now,
+    exp: now + SESSION_TTL_MS,
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return `${encodedPayload}.${signSessionPayload(encodedPayload)}`;
+}
+
+function verifySessionCookie(request) {
+  const token = getCookieValue(request, SESSION_COOKIE_NAME);
+  if (!token) return '';
+
+  const [encodedPayload, signature] = token.split('.');
+  if (!encodedPayload || !signature) return '';
+
+  const expectedSignature = signSessionPayload(encodedPayload);
+  if (!safeEqual(signature, expectedSignature)) return '';
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+    if (!payload?.sub || !payload?.exp || Date.now() > Number(payload.exp)) return '';
+    return String(payload.sub);
+  } catch {
+    return '';
+  }
+}
+
+function signSessionPayload(encodedPayload) {
+  return crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(encodedPayload)
+    .digest('base64url');
+}
+
+function safeEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function getCookieValue(request, name) {
+  const cookieHeader = String(request.headers.cookie || '');
+  const cookies = cookieHeader.split(';');
+
+  for (const cookie of cookies) {
+    const [rawName, ...rawValueParts] = cookie.trim().split('=');
+    if (rawName === name) {
+      return rawValueParts.join('=');
+    }
+  }
+
+  return '';
+}
+
+function isSecureSessionCookie() {
+  if (process.env.SESSION_COOKIE_SECURE === 'false') return false;
+  if (process.env.SESSION_COOKIE_SECURE === 'true') return true;
+  return IS_PRODUCTION;
+}
+
+function createRateLimit({ keyPrefix, windowMs, max }) {
+  const hits = new Map();
+
+  return (request, response, next) => {
+    const now = Date.now();
+    const key = `${keyPrefix}:${getClientIp(request)}`;
+    const bucket = hits.get(key);
+
+    if (!bucket || bucket.resetAt <= now) {
+      hits.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+
+    bucket.count += 1;
+    if (bucket.count > max) {
+      response.setHeader('Retry-After', Math.ceil((bucket.resetAt - now) / 1000));
+      return response.status(429).json({ ok: false, error: 'Too many requests. Please try again shortly.' });
+    }
+
+    if (hits.size > 5000) {
+      pruneRateLimitBuckets(hits, now);
+    }
+
+    return next();
+  };
+}
+
+function getClientIp(request) {
+  return String(request.ip || request.socket?.remoteAddress || 'unknown');
+}
+
+function pruneRateLimitBuckets(hits, now) {
+  for (const [key, bucket] of hits.entries()) {
+    if (bucket.resetAt <= now) hits.delete(key);
+  }
 }
 
 async function getNotificationsForUser(user) {
@@ -2485,6 +2671,12 @@ function normalizeNonNegativeNumber(value, fallback) {
   return number;
 }
 
+function normalizePositiveNumber(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return fallback;
+  return number;
+}
+
 function positiveInteger(value, fieldName) {
   const number = Number(value);
   if (!Number.isInteger(number) || number <= 0) {
@@ -2511,5 +2703,11 @@ function assertNoExternalContact(fields) {
 function badRequest(message) {
   const error = new Error(message);
   error.statusCode = 400;
+  throw error;
+}
+
+function forbidden(message) {
+  const error = new Error(message);
+  error.statusCode = 403;
   throw error;
 }

@@ -78,6 +78,30 @@ try {
       role: 'admin',
     },
   });
+  await prisma.user.upsert({
+    where: { id: 'smoke-seller' },
+    update: {
+      username: 'smoke.seller',
+      role: 'user',
+    },
+    create: {
+      id: 'smoke-seller',
+      username: 'smoke.seller',
+      role: 'user',
+    },
+  });
+  await prisma.user.upsert({
+    where: { id: 'smoke-buyer' },
+    update: {
+      username: 'smoke.buyer',
+      role: 'user',
+    },
+    create: {
+      id: 'smoke-buyer',
+      username: 'smoke.buyer',
+      role: 'user',
+    },
+  });
 
   const health = await waitForHealth();
   assertEqual(health.platformFeePercent, '3%', 'Backend must read PLATFORM_FEE_RATE from the environment.');
@@ -121,27 +145,29 @@ try {
     'Configured Pi admin username must receive role admin after token verification.',
   );
 
-  const createdService = await postJson('/api/services', {
-    id: serviceId,
-    title: 'Smoke test logo sprint',
-    category: 'Design',
-    sellerId: 'smoke-seller',
-    sellerName: 'smoke.seller',
-    sellerHandle: '@smoke.seller',
-    pricePi: 10,
-    depositPi: 4,
-    deliveryDays: 1,
-    icon: 'ST',
-    accent: '#f5b84b',
-    summary: 'Smoke-test service for API-driven marketplace state.',
-    terms: 'Buyer sends a short brief.',
-    portfolioUrl: 'https://github.com/pideal/smoke-portfolio',
-    proofLink: 'https://docs.google.com/document/d/smoke-proof',
-    experience: 'Smoke seller has sample digital-service experience.',
-    revisionPolicy: 'One smoke-test revision is included.',
-    requirementsFromBuyer: 'Buyer sends a clear brief and reference style.',
-    deliverables: ['Smoke delivery'],
-  });
+  const createdService = await postJson(
+    '/api/services',
+    {
+      id: serviceId,
+      title: 'Smoke test logo sprint',
+      category: 'Design',
+      sellerHandle: '@smoke.seller',
+      pricePi: 10,
+      depositPi: 4,
+      deliveryDays: 1,
+      icon: 'ST',
+      accent: '#f5b84b',
+      summary: 'Smoke-test service for API-driven marketplace state.',
+      terms: 'Buyer sends a short brief.',
+      portfolioUrl: 'https://github.com/pideal/smoke-portfolio',
+      proofLink: 'https://docs.google.com/document/d/smoke-proof',
+      experience: 'Smoke seller has sample digital-service experience.',
+      revisionPolicy: 'One smoke-test revision is included.',
+      requirementsFromBuyer: 'Buyer sends a clear brief and reference style.',
+      deliverables: ['Smoke delivery'],
+    },
+    { actorUserId: 'smoke-seller' },
+  );
 
   assertEqual(createdService.service.status, 'pending', 'New services must start pending.');
   const adminNotifications = await getJson('/api/notifications', { actorUserId: 'admin-lina' });
@@ -154,42 +180,46 @@ try {
   const rejectedModeration = await postJsonExpectFailure(`/api/services/${serviceId}/status`, { status: 'approved' });
   assertEqual(rejectedModeration.status, 401, 'Service moderation must require an admin actor.');
 
-  const rejectedContactListing = await postJsonExpectFailure('/api/services', {
-    id: `${serviceId}-contact`,
-    title: 'Unsafe contact listing',
-    category: 'Design',
-    sellerId: 'smoke-seller',
-    sellerName: 'smoke.seller',
-    pricePi: 10,
-    depositPi: 4,
-    deliveryDays: 1,
-    icon: 'UC',
-    accent: '#f5b84b',
-    summary: 'Message me on Telegram for details.',
-    terms: 'Buyer sends a short brief.',
-    revisionPolicy: 'One revision.',
-    requirementsFromBuyer: 'Brief and reference.',
-  });
+  const rejectedContactListing = await postJsonExpectFailure(
+    '/api/services',
+    {
+      id: `${serviceId}-contact`,
+      title: 'Unsafe contact listing',
+      category: 'Design',
+      pricePi: 10,
+      depositPi: 4,
+      deliveryDays: 1,
+      icon: 'UC',
+      accent: '#f5b84b',
+      summary: 'Message me on Telegram for details.',
+      terms: 'Buyer sends a short brief.',
+      revisionPolicy: 'One revision.',
+      requirementsFromBuyer: 'Brief and reference.',
+    },
+    { actorUserId: 'smoke-seller' },
+  );
   assertEqual(rejectedContactListing.status, 400, 'Service listings must reject external contact methods.');
 
-  const rejectedUnsafePortfolio = await postJsonExpectFailure('/api/services', {
-    id: `${serviceId}-unsafe-link`,
-    title: 'Unsafe portfolio listing',
-    category: 'Design',
-    sellerId: 'smoke-seller',
-    sellerName: 'smoke.seller',
-    pricePi: 10,
-    depositPi: 4,
-    deliveryDays: 1,
-    icon: 'UL',
-    accent: '#f5b84b',
-    summary: 'Smoke-test service with a bad portfolio link.',
-    terms: 'Buyer sends a short brief.',
-    portfolioUrl: 'https://wa.me/123456789',
-    proofLink: 'https://github.com/pideal/smoke-proof',
-    revisionPolicy: 'One revision.',
-    requirementsFromBuyer: 'Brief and reference.',
-  });
+  const rejectedUnsafePortfolio = await postJsonExpectFailure(
+    '/api/services',
+    {
+      id: `${serviceId}-unsafe-link`,
+      title: 'Unsafe portfolio listing',
+      category: 'Design',
+      pricePi: 10,
+      depositPi: 4,
+      deliveryDays: 1,
+      icon: 'UL',
+      accent: '#f5b84b',
+      summary: 'Smoke-test service with a bad portfolio link.',
+      terms: 'Buyer sends a short brief.',
+      portfolioUrl: 'https://wa.me/123456789',
+      proofLink: 'https://github.com/pideal/smoke-proof',
+      revisionPolicy: 'One revision.',
+      requirementsFromBuyer: 'Brief and reference.',
+    },
+    { actorUserId: 'smoke-seller' },
+  );
   assertEqual(rejectedUnsafePortfolio.status, 400, 'Portfolio links must reject messaging domains.');
 
   const approvedService = await postJson(
@@ -242,16 +272,18 @@ try {
     'GET /api/services must include the smoke service.',
   );
 
-  const createdOrder = await postJson('/api/orders', {
-    serviceId,
-    buyerId: 'smoke-buyer',
-    buyerName: 'smoke.buyer',
-    buyerNote: 'Please create a tiny logo for the smoke test.',
-    requestSourceText: 'Smoke brand reference text.',
-    requestReferenceLink: 'https://drive.google.com/file/d/smoke-reference/view',
-    requestFileName: 'smoke-reference.png',
-    requestFileSize: '14 KB',
-  });
+  const createdOrder = await postJson(
+    '/api/orders',
+    {
+      serviceId,
+      buyerNote: 'Please create a tiny logo for the smoke test.',
+      requestSourceText: 'Smoke brand reference text.',
+      requestReferenceLink: 'https://drive.google.com/file/d/smoke-reference/view',
+      requestFileName: 'smoke-reference.png',
+      requestFileSize: '14 KB',
+    },
+    { actorUserId: 'smoke-buyer' },
+  );
   const orderId = createdOrder.order.id;
   assertEqual(createdOrder.order.status, 'Requested', 'New orders must start as seller-review requests.');
   assertEqual(createdOrder.order.requestFileName, 'smoke-reference.png', 'Order request metadata must persist.');
@@ -292,44 +324,73 @@ try {
     !unrelatedViewerNotifications.notifications.some((notification) => notification.targetId === unrelatedOrder.id),
     'Users must not see notifications for unrelated orders.',
   );
+  const unauthenticatedOrders = await getJsonExpectFailure('/api/orders');
+  assertEqual(unauthenticatedOrders.status, 401, 'GET /api/orders must require an authenticated session.');
+  const buyerScopedOrders = await getJson('/api/orders', { actorUserId: 'smoke-buyer' });
+  assertTruthy(
+    !buyerScopedOrders.orders.some((order) => order.id === unrelatedOrder.id),
+    'GET /api/orders must not include unrelated orders for a normal buyer.',
+  );
 
-  const rejectedShortReference = await postJsonExpectFailure('/api/orders', {
-    serviceId,
-    buyerId: 'smoke-buyer-short-link',
-    buyerName: 'smoke.buyer.short',
-    buyerNote: 'Please use this reference.',
-    requestSourceText: 'Smoke brand reference text.',
-    requestReferenceLink: 'https://bit.ly/smoke-reference',
-  });
+  const rejectedShortReference = await postJsonExpectFailure(
+    '/api/orders',
+    {
+      serviceId,
+      buyerNote: 'Please use this reference.',
+      requestSourceText: 'Smoke brand reference text.',
+      requestReferenceLink: 'https://bit.ly/smoke-reference',
+    },
+    { actorUserId: 'smoke-buyer' },
+  );
   assertEqual(rejectedShortReference.status, 400, 'Request reference links must reject short links.');
 
-  const rejectedEarlyPayment = await postJsonExpectFailure(`/api/pi/payments/${depositPaymentId}-early/approve`, {
-    orderId,
-    serviceId,
-    amountPi: 4,
-    mode: 'deposit',
-    buyerId: 'smoke-buyer',
-    buyerName: 'smoke.buyer',
-    sellerId: 'smoke-seller',
-    sellerName: 'smoke.seller',
-    demoMode: true,
-  });
+  const rejectedEarlyPayment = await postJsonExpectFailure(
+    `/api/pi/payments/${depositPaymentId}-early/approve`,
+    {
+      orderId,
+      serviceId,
+      amountPi: 4,
+      mode: 'deposit',
+      demoMode: true,
+    },
+    { actorUserId: 'smoke-buyer' },
+  );
   assertEqual(rejectedEarlyPayment.status, 400, 'Deposit cannot be paid before seller acceptance.');
 
-  const acceptedOrder = await postJson(`/api/orders/${orderId}/accept`, {});
+  const rejectedBuyerAccept = await postJsonExpectFailure(
+    `/api/orders/${orderId}/accept`,
+    {},
+    { actorUserId: 'smoke-buyer' },
+  );
+  assertEqual(rejectedBuyerAccept.status, 403, 'Only the seller can accept a requested order.');
+
+  const acceptedOrder = await postJson(`/api/orders/${orderId}/accept`, {}, { actorUserId: 'smoke-seller' });
   assertEqual(acceptedOrder.order.status, 'Pending Payment', 'Accepted requests must wait for the buyer deposit.');
 
-  const approval = await postJson(`/api/pi/payments/${depositPaymentId}/approve`, {
-    orderId,
-    serviceId,
-    amountPi: 99,
-    mode: 'deposit',
-    buyerId: 'smoke-buyer',
-    buyerName: 'smoke.buyer',
-    sellerId: 'smoke-seller',
-    sellerName: 'smoke.seller',
-    demoMode: true,
-  });
+  const rejectedSellerPayment = await postJsonExpectFailure(
+    `/api/pi/payments/${depositPaymentId}-seller/approve`,
+    {
+      orderId,
+      serviceId,
+      amountPi: 4,
+      mode: 'deposit',
+      demoMode: true,
+    },
+    { actorUserId: 'smoke-seller' },
+  );
+  assertEqual(rejectedSellerPayment.status, 403, 'Only the buyer can approve payment for an order.');
+
+  const approval = await postJson(
+    `/api/pi/payments/${depositPaymentId}/approve`,
+    {
+      orderId,
+      serviceId,
+      amountPi: 99,
+      mode: 'deposit',
+      demoMode: true,
+    },
+    { actorUserId: 'smoke-buyer' },
+  );
 
   assertEqual(approval.order.status, 'Pending Payment', 'Approval must not mark order as Paid.');
   assertEqual(approval.payment.amountPi, 4, 'Server must calculate the deposit amount from the service.');
@@ -344,15 +405,19 @@ try {
     'Buying and selling test users must persist with role user.',
   );
 
-  const beforeCompletion = await getJson(`/api/orders/${orderId}/status`);
+  const beforeCompletion = await getJson(`/api/orders/${orderId}/status`, { actorUserId: 'smoke-buyer' });
   assertEqual(beforeCompletion.order.status, 'Pending Payment', 'Stored order must remain Pending Payment before completion.');
 
-  const completion = await postJson('/api/pi/payments/incomplete', {
-    paymentId: depositPaymentId,
-    orderId,
-    txid: depositTxid,
-    demoMode: true,
-  });
+  const completion = await postJson(
+    '/api/pi/payments/incomplete',
+    {
+      paymentId: depositPaymentId,
+      orderId,
+      txid: depositTxid,
+      demoMode: true,
+    },
+    { actorUserId: 'smoke-buyer' },
+  );
 
   assertEqual(completion.action, 'completed', 'Incomplete payment recovery must complete approved in-flight payments.');
   assertEqual(completion.order.status, 'Deposit Paid', 'Deposit completion must not mark the full order completed.');
@@ -365,21 +430,29 @@ try {
   assertEqual(completion.order.sellerPayoutPi, 0, 'Seller payout must not be available before full payment.');
   assertEqual(completion.mock, true, 'Mock completion must stay in mock mode.');
 
-  const started = await postJson(`/api/orders/${orderId}/start`, {});
+  const started = await postJson(`/api/orders/${orderId}/start`, {}, { actorUserId: 'smoke-seller' });
   assertEqual(started.order.status, 'In Progress', 'Paid orders must be startable.');
 
-  const rejectedUnsafeDelivery = await postJsonExpectFailure(`/api/orders/${orderId}/deliver`, {
-    deliveryMessage: 'Smoke delivery finished.',
-    deliveryLink: 'https://t.me/smoke-delivery',
-  });
+  const rejectedUnsafeDelivery = await postJsonExpectFailure(
+    `/api/orders/${orderId}/deliver`,
+    {
+      deliveryMessage: 'Smoke delivery finished.',
+      deliveryLink: 'https://t.me/smoke-delivery',
+    },
+    { actorUserId: 'smoke-seller' },
+  );
   assertEqual(rejectedUnsafeDelivery.status, 400, 'Delivery links must reject messaging domains.');
 
-  const delivered = await postJson(`/api/orders/${orderId}/deliver`, {
-    deliveryMessage: 'Smoke delivery finished.',
-    deliveryLink: 'https://www.dropbox.com/s/smoke-delivery.zip',
-    deliveryFileName: 'smoke-delivery.zip',
-    deliveryFileSize: '20 KB',
-  });
+  const delivered = await postJson(
+    `/api/orders/${orderId}/deliver`,
+    {
+      deliveryMessage: 'Smoke delivery finished.',
+      deliveryLink: 'https://www.dropbox.com/s/smoke-delivery.zip',
+      deliveryFileName: 'smoke-delivery.zip',
+      deliveryFileSize: '20 KB',
+    },
+    { actorUserId: 'smoke-seller' },
+  );
   assertEqual(delivered.order.status, 'Delivered', 'Seller delivery must move order to Delivered.');
   assertEqual(delivered.order.deliveryFileName, 'smoke-delivery.zip', 'Delivery metadata must persist.');
   const buyerNotifications = await getJson('/api/notifications', { actorUserId: 'smoke-buyer' });
@@ -418,26 +491,34 @@ try {
     'Admin must receive deliveryLink before buyer pays remaining.',
   );
 
-  const rejectedConfirm = await postJsonExpectFailure(`/api/orders/${orderId}/confirm`, {});
+  const rejectedConfirm = await postJsonExpectFailure(
+    `/api/orders/${orderId}/confirm`,
+    {},
+    { actorUserId: 'smoke-buyer' },
+  );
   assertEqual(rejectedConfirm.status, 409, 'Buyer confirmation must not complete the order while balance is due.');
 
-  const balanceApproval = await postJson(`/api/pi/payments/${balancePaymentId}/approve`, {
-    orderId,
-    serviceId,
-    amountPi: 999,
-    mode: 'balance',
-    buyerId: 'smoke-buyer',
-    buyerName: 'smoke.buyer',
-    sellerId: 'smoke-seller',
-    sellerName: 'smoke.seller',
-    demoMode: true,
-  });
+  const balanceApproval = await postJson(
+    `/api/pi/payments/${balancePaymentId}/approve`,
+    {
+      orderId,
+      serviceId,
+      amountPi: 999,
+      mode: 'balance',
+      demoMode: true,
+    },
+    { actorUserId: 'smoke-buyer' },
+  );
   assertEqual(balanceApproval.payment.amountPi, 6, 'Server must calculate the remaining balance from completed payments.');
 
-  const balanceCompletion = await postJson(`/api/pi/payments/${balancePaymentId}/complete`, {
-    orderId,
-    txid: balanceTxid,
-  });
+  const balanceCompletion = await postJson(
+    `/api/pi/payments/${balancePaymentId}/complete`,
+    {
+      orderId,
+      txid: balanceTxid,
+    },
+    { actorUserId: 'smoke-buyer' },
+  );
   assertEqual(balanceCompletion.order.status, 'Completed', 'Remaining balance completion must complete the order.');
   assertEqual(balanceCompletion.order.paidPi, 10, 'Completed order must show the full paid service price.');
   assertEqual(balanceCompletion.order.platformFeePi, 0.3, 'Final fee must use PLATFORM_FEE_RATE on total paid amount.');
@@ -508,17 +589,26 @@ try {
   );
   assertEqual(rejectedDuplicatePayout.status, 409, 'Manual seller payout completion must reject duplicate paid marking.');
 
-  const reviewed = await postJson(`/api/orders/${orderId}/review`, { rating: 5 });
+  const reviewed = await postJson(`/api/orders/${orderId}/review`, { rating: 5 }, { actorUserId: 'smoke-buyer' });
   assertEqual(reviewed.order.rating, 5, 'Review rating must persist on the order response.');
 
-  const report = await postJson('/api/reports', {
-    serviceId,
-    serviceTitle: 'Smoke test logo sprint',
-    reporterId: 'smoke-buyer',
-    reporterName: 'smoke.buyer',
-    reason: 'Smoke report for moderation.',
-  });
+  const report = await postJson(
+    '/api/reports',
+    {
+      serviceId,
+      serviceTitle: 'Smoke test logo sprint',
+      reason: 'Smoke report for moderation.',
+    },
+    { actorUserId: 'smoke-buyer' },
+  );
   assertEqual(report.report.status, 'open', 'Reports must start open.');
+  const rejectedReportsList = await getJsonExpectFailure('/api/reports', { actorUserId: 'smoke-buyer' });
+  assertEqual(rejectedReportsList.status, 403, 'GET /api/reports must be admin-only.');
+  const adminReports = await getJson('/api/reports', { actorUserId: 'admin-lina' });
+  assertTruthy(
+    adminReports.reports.some((item) => item.id === report.report.id),
+    'Admin must be able to list submitted reports.',
+  );
 
   const rejectedReportResolve = await postJsonExpectFailure(`/api/reports/${report.report.id}/resolve`, {});
   assertEqual(rejectedReportResolve.status, 401, 'Report resolution must require an admin actor.');
@@ -584,10 +674,10 @@ try {
   assertEqual(releasedDispute.order.escrowHeldPi, 0, 'Released dispute escrow must no longer hold funds.');
   assertEqual(releasedDispute.order.sellerPayoutPi, 9.7, 'Admin release must record the seller net payout.');
 
-  const afterCompletion = await getJson(`/api/orders/${orderId}/status`);
+  const afterCompletion = await getJson(`/api/orders/${orderId}/status`, { actorUserId: 'smoke-buyer' });
   assertEqual(afterCompletion.order.status, 'Completed', 'Stored order must persist the final status.');
 
-  const orders = await getJson('/api/orders');
+  const orders = await getJson('/api/orders', { actorUserId: 'smoke-buyer' });
   assertTruthy(
     orders.orders.some((order) => order.id === orderId && order.rating === 5),
     'GET /api/orders must include the completed reviewed order.',
@@ -732,18 +822,20 @@ async function expectCorsPreflight(path) {
     headers: {
       Origin: 'https://pideal-lite.vercel.app',
       'Access-Control-Request-Method': 'POST',
-      'Access-Control-Request-Headers': 'content-type,x-pideal-user-id',
+      'Access-Control-Request-Headers': 'content-type',
     },
   });
   const allowedHeaders = response.headers.get('access-control-allow-headers') || '';
   const allowedOrigin = response.headers.get('access-control-allow-origin') || '';
+  const allowCredentials = response.headers.get('access-control-allow-credentials') || '';
 
   assertEqual(response.status, 204, 'CORS preflight must return 204.');
   assertEqual(allowedOrigin, 'https://pideal-lite.vercel.app', 'CORS preflight must allow the deployed frontend origin.');
   assertTruthy(
-    allowedHeaders.toLowerCase().includes('x-pideal-user-id'),
-    'CORS preflight must allow x-pideal-user-id.',
+    allowedHeaders.toLowerCase().includes('content-type'),
+    'CORS preflight must allow content-type.',
   );
+  assertEqual(allowCredentials, 'true', 'CORS preflight must allow session cookies.');
 }
 
 async function parseResponse(response) {
