@@ -127,6 +127,7 @@ function apiPath(path) {
 async function postJson(path, body) {
   const response = await fetch(apiPath(path), {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -211,11 +212,10 @@ export async function authenticateWithPi() {
   }
 
   const scopes = ['username', 'payments'];
+  const incompletePayments = [];
 
   function onIncompletePaymentFound(payment) {
-    void completeIncompletePiPayment(payment).catch((error) => {
-      console.error('Incomplete Pi payment could not be completed by the backend.', error);
-    });
+    incompletePayments.push(payment);
   }
 
   const auth = await pi.authenticate(scopes, onIncompletePaymentFound);
@@ -226,6 +226,7 @@ export async function authenticateWithPi() {
     accessToken: auth.accessToken,
     walletStatus: 'Official Pi SDK connected',
     authProvider: 'pi-sdk',
+    incompletePayments,
   };
 }
 

@@ -14,6 +14,7 @@ export function allowLocalDevCors(request, response, next) {
     response.setHeader('Vary', 'Origin');
     response.setHeader('Access-Control-Allow-Headers', getAllowedHeaders(request));
     response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    response.setHeader('Access-Control-Allow-Credentials', 'true');
     response.setHeader('Access-Control-Max-Age', '86400');
   }
 
@@ -49,5 +50,5 @@ function getAllowedHeaders(request) {
     return requestedHeaders;
   }
 
-  return 'Content-Type, Authorization, X-PiDeal-User-Id, x-pideal-user-id';
+  return 'Content-Type, Authorization';
 }
