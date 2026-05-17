@@ -1705,6 +1705,31 @@ textarea {
   margin: 0;
 }
 
+.app-legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 22px 0 4px;
+}
+
+.app-legal-links a {
+  min-height: 36px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.76);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.app-legal-links a:focus-visible {
+  outline: 3px solid rgba(123, 79, 215, 0.25);
+  outline-offset: 2px;
+}
+
 .bottom-nav {
   position: fixed;
   right: 0;

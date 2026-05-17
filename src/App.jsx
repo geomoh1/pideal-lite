@@ -276,24 +276,197 @@ const legalDocuments = {
   },
 };
 
+const legalDocumentsAr = {
+  privacy: {
+    eyebrow: 'سياسة الخصوصية',
+    title: 'سياسة خصوصية PiDeal',
+    updated: 'آخر تحديث: 17 مايو 2026',
+    intro:
+      'PiDeal هو سوق خدمات رقمية يعمل مع Pi Network. توضح هذه السياسة البيانات التي نجمعها، وكيف نستخدم تسجيل الدخول عبر Pi، وكيف نحمي المدفوعات والضمان والتسليم والنزاعات.',
+    sections: [
+      {
+        title: 'المعلومات التي نجمعها',
+        items: [
+          'معلومات تسجيل الدخول عبر Pi التي يتم التحقق منها من خلال Pi SDK، وتشمل معرف مستخدم Pi واسم المستخدم.',
+          'معلومات ملف السوق مثل حالة البائع، الخدمات المنشورة، تفاصيل الطلبات، التقييمات، البلاغات، وعنوان محفظة الاستلام إذا اخترت إضافته.',
+          'سجلات الدفع المطلوبة لاعتماد وإكمال مدفوعات Pi، وحساب الضمان، ورسوم المنصة، وتتبع دفعات البائعين، ومعالجة النزاعات.',
+          'بيانات الطلب والتسليم مثل الملاحظات، الروابط، أسماء الملفات، وأحجام الملفات. PiDeal يسجل بيانات وصفية فقط ولا يطلب passphrase للمحفظة.',
+        ],
+      },
+      {
+        title: 'كيف نستخدم المعلومات',
+        items: [
+          'للتحقق من هوية المستخدم عبر Pi ومنع انتحال الحسابات.',
+          'لتشغيل الطلبات، حالة الضمان، التسليم المحمي، التقييمات، البلاغات، ومراجعة الأدمن.',
+          'للتحقق من مدفوعات Pi، وتتبع العربون والمتبقي، وتجهيز دفعات البائعين، وحل النزاعات.',
+          'لحماية المشترين والبائعين من الاحتيال، الروابط غير الآمنة، محاولات الدفع الخارجي، ومخالفة السياسات.',
+        ],
+      },
+      {
+        title: 'المدفوعات والضمان والدفعات',
+        items: [
+          'تتم معالجة مدفوعات المشتري عبر تدفقات Pi، ويتم تسجيلها في PiDeal بعد اعتمادها وإكمالها من الخادم.',
+          'تُعامل المبالغ كأموال محجوزة في ضمان التطبيق حتى التسليم، أو تأكيد المشتري، أو مراجعة النزاع، أو انتهاء فترة النزاع.',
+          'قد يتم التحقق من دفعات البائعين يدويًا بواسطة الأدمن، ويمكن تسجيل معرف معاملة التحويل.',
+          'PiDeal لا يطلب ولا يخزن ولا يحتاج passphrase أو private key أو seed phrase لمحفظة Pi.',
+        ],
+      },
+      {
+        title: 'المشاركة والإفصاح',
+        items: [
+          'المستخدمون العاديون لا يحصلون إلا على معلومات الطلبات المرتبطة بهم كمشترين أو بائعين.',
+          'قد يصل الأدمن إلى البلاغات، النزاعات، الطلبات، ومعلومات الدفعات لتشغيل السوق بأمان.',
+          'صفحات الخدمات العامة قد تعرض عنوان الخدمة، الوصف، السعر، مدة التسليم، اسم البائع الظاهر، التقييم، وعلامات الثقة.',
+          'نحن لا نبيع البيانات الشخصية.',
+        ],
+      },
+      {
+        title: 'الأمان والاحتفاظ بالبيانات',
+        items: [
+          'يستخدم PiDeal تحققًا من الجلسة في الخادم، وملفات cookie من نوع httpOnly، وفحص ملكية الطلبات، وقواعد أمان للروابط، ونقاط إدارة محمية للأدمن.',
+          'قد يتم الاحتفاظ بسجلات الطلبات، المدفوعات، البلاغات، التقييمات، والدفعات حسب الحاجة لحماية السوق، والمحاسبة، ومنع الإساءة، وسجل النزاعات.',
+          'إذا كنت تعتقد أن سجلًا ما غير دقيق أو غير آمن، تواصل مع بريد دعم المطور أدناه.',
+        ],
+      },
+    ],
+  },
+  terms: {
+    eyebrow: 'شروط الخدمة',
+    title: 'شروط خدمة PiDeal',
+    updated: 'آخر تحديث: 17 مايو 2026',
+    intro:
+      'توضح هذه الشروط القواعد الأساسية لاستخدام PiDeal كمشترٍ أو بائع أو مستخدم داخل سوق يخضع لمراجعة الأدمن.',
+    sections: [
+      {
+        title: 'دور السوق',
+        items: [
+          'يوفر PiDeal طبقة سوق للخدمات الرقمية، وهوية Pi، وتتبع ضمان الطلبات، والتسليم المحمي، ومعالجة النزاعات.',
+          'البائع مسؤول عن وصف الخدمة بدقة، ونطاق التسليم، والمدة، وسياسة التعديلات، ومتطلبات المشتري.',
+          'المشتري مسؤول عن تقديم متطلبات واضحة ودفع العربون أو المتبقي عبر تدفقات Pi المعتمدة.',
+        ],
+      },
+      {
+        title: 'الضمان والتسليم',
+        items: [
+          'لا يتم تسجيل العربون أو الدفع الكامل إلا بعد اعتماد وإكمال مدفوعات Pi من الخادم.',
+          'قد تبقى ملفات أو روابط التسليم مقفلة عن المشتري حتى يتم دفع المتبقي.',
+          'بعد اكتمال الطلب، قد يبقى الضمان في حالة انتظار خلال فترة النزاع قبل تجهيز دفعة البائع.',
+          'اعتبار الضمان مسوى هو قرار محاسبي داخلي؛ أما اعتبار دفعة البائع مدفوعة فيحتاج إلى معرف معاملة تحويل مسجل.',
+        ],
+      },
+      {
+        title: 'السلوك الممنوع',
+        items: [
+          'لا تطلب أو تشارك passphrase أو private key أو seed phrase أو أي أسرار للمحفظة.',
+          'لا تستخدم الخدمات أو الطلبات أو ملاحظات التسليم أو البلاغات لنقل الصفقة خارج ضمان PiDeal.',
+          'لا تنشر روابط ضارة، روابط مختصرة، روابط دفع خارجي، روابط تواصل مباشر، رسائل مزعجة، محتوى غير قانوني، أو وعود خدمة مضللة.',
+          'قد يرفض PiDeal أو يحظر أو يزيل أو يرد المبلغ أو يصعّد أي نشاط يبدو غير آمن أو مسيئًا.',
+        ],
+      },
+      {
+        title: 'النزاعات ومراجعة الأدمن',
+        items: [
+          'يمكن للمشتري فتح نزاع للطلبات المؤهلة بعد التسليم أو الإكمال وقبل حل الضمان نهائيًا.',
+          'قد يراجع الأدمن البلاغات، النزاعات، الخدمات، المستخدمين، سجلات الدفع، وبيانات التسليم لاتخاذ قرارات السوق.',
+          'قد تؤدي قرارات الأدمن إلى تسجيل رد مبلغ، أو تسوية لصالح البائع، أو تجهيز دفعة البائع، أو رفض خدمة، أو حظر بائع.',
+        ],
+      },
+      {
+        title: 'التوفر والتغييرات',
+        items: [
+          'يقدم PiDeal كسوق خدمات رقمية وقد يتغير مع تطور متطلبات منصة Pi Network.',
+          'قد يتم تحديث الميزات، الرسوم، مدة الضمان، قواعد المراجعة، وإجراءات الدفعات لأسباب أمنية أو تشغيلية أو امتثال.',
+          'استمرار استخدام PiDeal يعني قبولك للشروط الحالية وقواعد أمان السوق.',
+        ],
+      },
+    ],
+  },
+  contact: {
+    eyebrow: 'التواصل مع المطور',
+    title: 'دعم مطور PiDeal',
+    updated: 'قناة دعم لمتصفح Pi ومراجعة PiNet',
+    intro:
+      'لأسئلة الخصوصية، دعم المدفوعات، البلاغات، متابعة النزاعات، مراجعة التطبيق، أو التواصل مع المطور، استخدم بيانات الدعم الرسمية أدناه.',
+    sections: [
+      {
+        title: 'بريد الدعم',
+        items: [
+          'Email: pideal.support@gmail.com',
+          'استخدم هذا البريد لأسئلة الحساب، الخصوصية، الدفع، الضمان، النزاعات، دفعات البائعين، أو مراجعة التطبيق.',
+          'لا ترسل passphrase أو private key أو seed phrase أبدًا. دعم PiDeal لن يطلب منك أسرار المحفظة.',
+        ],
+      },
+      {
+        title: 'المستودع',
+        items: [
+          'GitHub: https://github.com/geomoh1/pideal-lite',
+          'قد تعتمد إمكانية عرض المستودع على إعدادات مالك المشروع.',
+        ],
+      },
+      {
+        title: 'القيم المقترحة في Pi Developer Portal',
+        items: [
+          'رابط سياسة الخصوصية: /privacy',
+          'رابط الشروط: /terms',
+          'Contact Developer: pideal.support@gmail.com',
+          'Repository: https://github.com/geomoh1/pideal-lite',
+        ],
+      },
+    ],
+  },
+};
+
+const legalLabels = {
+  en: {
+    openApp: 'Open PiDeal',
+    navLabel: 'Legal pages',
+    privacy: 'Privacy',
+    terms: 'Terms',
+    contact: 'Contact',
+    language: 'Language',
+  },
+  ar: {
+    openApp: 'فتح PiDeal',
+    navLabel: 'الصفحات القانونية',
+    privacy: 'الخصوصية',
+    terms: 'الشروط',
+    contact: 'التواصل',
+    language: 'اللغة',
+  },
+};
+
 function LegalPage({ route }) {
-  const document = legalDocuments[route] || legalDocuments.privacy;
+  const [language, setLanguage] = useState(getInitialLanguage);
+  const isArabic = language === 'ar';
+  const documents = isArabic ? legalDocumentsAr : legalDocuments;
+  const labels = isArabic ? legalLabels.ar : legalLabels.en;
+  const document = documents[route] || documents.privacy;
 
   useEffect(() => {
+    saveLanguagePreference(language);
+    window.document.documentElement.lang = language;
+    window.document.documentElement.dir = isArabic ? 'rtl' : 'ltr';
     window.document.title = `${document.title} | PiDeal`;
-  }, [document.title]);
+  }, [document.title, isArabic, language]);
 
   return (
-    <main className="legal-shell">
+    <main className="legal-shell" lang={language} dir={isArabic ? 'rtl' : 'ltr'}>
       <header className="legal-header">
-        <a className="legal-brand" href="/" aria-label="Open PiDeal">
+        <a className="legal-brand" href="/" aria-label={labels.openApp}>
           <img src="/pideal-logo.svg" alt="PiDeal" />
         </a>
-        <nav className="legal-nav" aria-label="Legal pages">
-          <a className={route === 'privacy' ? 'active' : ''} href="/privacy">Privacy</a>
-          <a className={route === 'terms' ? 'active' : ''} href="/terms">Terms</a>
-          <a className={route === 'contact' ? 'active' : ''} href="/contact">Contact</a>
+        <nav className="legal-nav" aria-label={labels.navLabel}>
+          <a className={route === 'privacy' ? 'active' : ''} href={`/privacy?lang=${language}`}>{labels.privacy}</a>
+          <a className={route === 'terms' ? 'active' : ''} href={`/terms?lang=${language}`}>{labels.terms}</a>
+          <a className={route === 'contact' ? 'active' : ''} href={`/contact?lang=${language}`}>{labels.contact}</a>
         </nav>
+        <label className="language-switch legal-language-switch" aria-label={labels.language}>
+          <span>{labels.language}</span>
+          <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+            <option value="en">English</option>
+            <option value="ar">العربية</option>
+          </select>
+        </label>
       </header>
 
       <section className="legal-hero">
@@ -1311,6 +1484,8 @@ function MarketplaceApp() {
         )}
       </main>
 
+      <AppLegalLinks />
+
       <nav className="bottom-nav" aria-label="Primary">
         <NavItem icon={<Home size={20} />} label="Home" active={activeView === 'home'} onClick={() => setActiveView('home')} />
         <NavItem icon={<FilePlus2 size={20} />} label="Sell" active={activeView === 'add'} onClick={() => setActiveView('add')} />
@@ -1321,6 +1496,19 @@ function MarketplaceApp() {
         </div>
       </Localized>
     </I18nProvider>
+  );
+}
+
+function AppLegalLinks() {
+  const { language } = useLocale();
+  const labels = language === 'ar' ? legalLabels.ar : legalLabels.en;
+
+  return (
+    <footer className="app-legal-links" aria-label="App information">
+      <a href={`/privacy?lang=${language}`}>{labels.privacy}</a>
+      <a href={`/terms?lang=${language}`}>{labels.terms}</a>
+      <a href={`/contact?lang=${language}`}>{labels.contact}</a>
+    </footer>
   );
 }
 
