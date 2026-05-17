@@ -49,7 +49,9 @@ const ar = {
   'Deposit held': 'العربون محتجز',
   'Full amount held': 'كامل المبلغ محتجز',
   'Release pending': 'بانتظار التحرير',
+  'Settlement pending': 'بانتظار التسوية',
   Released: 'تم التحرير',
+  Settled: 'تمت التسوية',
   'Not funded': 'غير ممول',
   'Escrow paused for admin dispute review.': 'تم إيقاف الضمان مؤقتًا لمراجعة النزاع من الأدمن.',
   'Buyer payment is held by app escrow until delivery and dispute checks complete.':
@@ -57,6 +59,25 @@ const ar = {
   'Remaining balance completed. Delivery is unlocked and escrow is pending release after the dispute window.':
     'تم دفع المتبقي. تم فتح التسليم والضمان بانتظار التحرير بعد فترة النزاع.',
   'Release due escrows': 'حرر الضمانات المستحقة',
+  'Settle due escrows': 'سوّ الضمانات المستحقة',
+  'Pending seller payouts': 'مدفوعات البائعين المعلقة',
+  'Complete seller payouts': 'أكمل مدفوعات البائعين',
+  'Settle due escrows first, send Pi manually from the app wallet, then record the payout transaction ID.':
+    'سوّ الضمانات المستحقة أولًا، ثم أرسل Pi يدويًا من محفظة التطبيق، وبعدها سجل معرّف معاملة التحويل.',
+  'Payouts due': 'مدفوعات مستحقة',
+  'Seller payout marked completed.': 'تم تسجيل دفعة البائع كمكتملة.',
+  'Seller payout could not be marked completed.': 'تعذر تسجيل دفعة البائع كمكتملة.',
+  'Escrow settled. Seller payout pending manual transfer.': 'تمت تسوية الضمان. دفعة البائع بانتظار التحويل اليدوي.',
+  'Payout pending': 'دفعة معلقة',
+  'Payout paid': 'دفعة مدفوعة',
+  'No payout': 'لا توجد دفعة',
+  Gross: 'الإجمالي',
+  'Manual payout transaction ID': 'معرّف معاملة التحويل اليدوي',
+  'Mark payout completed': 'سجل الدفعة كمكتملة',
+  'No seller payouts are queued.': 'لا توجد مدفوعات بائعين في قائمة الانتظار.',
+  'Settle for seller': 'سوّ لصالح البائع',
+  'Dispute resolved: escrow settled for seller payout.': 'تم حل النزاع: تمت تسوية الضمان لدفعة البائع.',
+  'Escrow could not be settled for seller payout.': 'تعذر تسوية الضمان لدفعة البائع.',
   'Due escrow releases could not be processed.': 'تعذر تنفيذ تحرير الضمانات المستحقة.',
   Share: 'مشاركة',
   'Share sheet opened.': 'تم فتح نافذة المشاركة.',
@@ -261,6 +282,7 @@ const ar = {
   Reports: 'البلاغات',
   services: 'الخدمات',
   orders: 'الطلبات',
+  payouts: 'المدفوعات',
   reports: 'البلاغات',
   pending: 'قيد المراجعة',
   approved: 'مقبولة',
@@ -348,6 +370,14 @@ const arPatterns = [
     render: ([, buyer, seller]) => `المشتري: ${buyer} · البائع: ${seller}`,
   },
   {
+    pattern: /^Seller: (.+) · Order: (.+)$/,
+    render: ([, seller, order]) => `البائع: ${seller} · الطلب: ${order}`,
+  },
+  {
+    pattern: /^Seller: (.+) Â· Order: (.+)$/,
+    render: ([, seller, order]) => `البائع: ${seller} · الطلب: ${order}`,
+  },
+  {
     pattern: /^Pay (.+) Pi deposit$/,
     render: ([, amount]) => `ادفع عربون ${amount} Pi`,
   },
@@ -360,8 +390,16 @@ const arPatterns = [
     render: ([, time]) => `يتحرر الضمان بعد فترة النزاع: ${time}`,
   },
   {
+    pattern: /^Funds are held in app escrow\. Release available after dispute window: (.+)$/,
+    render: ([, time]) => `الأموال محجوزة في ضمان التطبيق. التحرير متاح بعد فترة النزاع: ${time}`,
+  },
+  {
     pattern: /^Escrow released to seller record: (.+)$/,
     render: ([, time]) => `تم تسجيل تحرير الضمان للبائع: ${time}`,
+  },
+  {
+    pattern: /^Payout completed\. Transaction ID: (.+)$/,
+    render: ([, txid]) => `اكتمل تحويل البائع. معرّف المعاملة: ${txid}`,
   },
   {
     pattern: /^Escrow refunded to buyer record: (.+)$/,
@@ -370,6 +408,10 @@ const arPatterns = [
   {
     pattern: /^(.+) escrow releases processed\.$/,
     render: ([, count]) => `تم تنفيذ ${count} من تحريرات الضمان.`,
+  },
+  {
+    pattern: /^(.+) escrow settlements prepared for manual payout\.$/,
+    render: ([, count]) => `تم تجهيز ${count} تسويات ضمان للتحويل اليدوي.`,
   },
   {
     pattern: /^Fee (.+)$/,

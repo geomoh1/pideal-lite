@@ -17,6 +17,7 @@ model User {
   services        Service[]
   buyerOrders     Order[]   @relation("OrderBuyer")
   sellerOrders    Order[]   @relation("OrderSeller")
+  sellerPayouts   SellerPayout[]
   reviewsGiven    Review[]  @relation("ReviewBuyer")
   reviewsReceived Review[]  @relation("ReviewSeller")
   reports         Report[]
@@ -99,6 +100,7 @@ model Order {
   payments             Payment[]
   review               Review?
   escrowEvents         EscrowEvent[]
+  sellerPayout         SellerPayout?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -144,6 +146,27 @@ model Payment {
 
   @@index([orderId])
   @@index([status])
+}
+
+model SellerPayout {
+  id            String    @id @default(cuid())
+  orderId       String    @unique
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sellerId      String
+  seller        User      @relation(fields: [sellerId], references: [id])
+  grossPi       Float
+  platformFeePi Float
+  netPi         Float
+  payoutStatus  String    @default("manual_required")
+  payoutTxid    String?
+  paidAt        DateTime?
+  paidByAdmin   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([sellerId])
+  @@index([payoutStatus])
+  @@index([createdAt])
 }
 
 model Review {

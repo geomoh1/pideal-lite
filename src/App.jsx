@@ -44,6 +44,7 @@ import {
   disputeOrder as disputeOrderApi,
   fetchNotifications as fetchNotificationsApi,
   fetchMarketplaceData,
+  markSellerPayoutPaid as markSellerPayoutPaidApi,
   removeServiceById,
   refundOrder as refundOrderApi,
   releaseDueEscrows as releaseDueEscrowsApi,
@@ -324,6 +325,8 @@ function App() {
         setAdminTab('reports');
       } else if (notification.targetId === 'orders') {
         setAdminTab('orders');
+      } else if (notification.targetId === 'payouts') {
+        setAdminTab('payouts');
       } else {
         setAdminTab('services');
       }
@@ -826,12 +829,12 @@ function App() {
   async function releaseOrder(orderId) {
     try {
       const updatedOrder = await releaseOrderApi(orderId, user);
-      setFlowNotice('Dispute resolved: order released to seller.');
+      setFlowNotice('Dispute resolved: escrow settled for seller payout.');
       setFlowError('');
       replaceOrder(updatedOrder);
       void refreshNotifications(user);
     } catch (error) {
-      setFlowError(getErrorMessage(error, 'Order could not be released to seller.'));
+      setFlowError(getErrorMessage(error, 'Escrow could not be settled for seller payout.'));
       setFlowNotice('');
     }
   }
@@ -839,12 +842,26 @@ function App() {
   async function releaseDueEscrows() {
     try {
       const result = await releaseDueEscrowsApi(user);
-      setFlowNotice(`${result.releasedCount || 0} escrow releases processed.`);
+      setFlowNotice(`${result.releasedCount || 0} escrow settlements prepared for manual payout.`);
       setFlowError('');
       await refreshAppData({ actor: user, showRefreshIndicator: true });
       void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Due escrow releases could not be processed.'));
+      setFlowNotice('');
+    }
+  }
+
+  async function markSellerPayoutPaid(payoutId, payoutTxid) {
+    try {
+      const result = await markSellerPayoutPaidApi(payoutId, payoutTxid, user);
+      if (result.order) replaceOrder(result.order);
+      setFlowNotice('Seller payout marked completed.');
+      setFlowError('');
+      await refreshAppData({ actor: user, showRefreshIndicator: true });
+      void refreshNotifications(user);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Seller payout could not be marked completed.'));
       setFlowNotice('');
     }
   }
@@ -990,6 +1007,7 @@ function App() {
               refundOrder={refundOrder}
               releaseOrder={releaseOrder}
               releaseDueEscrows={releaseDueEscrows}
+              markSellerPayoutPaid={markSellerPayoutPaid}
               openService={openService}
             />
           ) : (
@@ -2191,10 +2209,26 @@ function AdminView({
   refundOrder,
   releaseOrder,
   releaseDueEscrows,
+  markSellerPayoutPaid,
   openService,
 }) {
+  const [payoutTxids, setPayoutTxids] = useState({});
   const pendingCount = services.filter((service) => service.status === 'pending').length;
   const openReports = reports.filter((report) => report.status === 'open');
+  const payoutOrders = orders.filter((order) => order.sellerPayoutStatus);
+  const pendingPayoutOrders = payoutOrders.filter((order) => order.sellerPayoutStatus === 'manual_required');
+
+  function updatePayoutTxid(payoutId, value) {
+    setPayoutTxids((current) => ({ ...current, [payoutId]: value }));
+  }
+
+  async function submitPayout(order) {
+    if (!order.sellerPayoutId) return;
+    const payoutTxid = String(payoutTxids[order.sellerPayoutId] || '').trim();
+    if (!payoutTxid) return;
+    await markSellerPayoutPaid(order.sellerPayoutId, payoutTxid);
+    setPayoutTxids((current) => ({ ...current, [order.sellerPayoutId]: '' }));
+  }
 
   return (
     <Localized>
@@ -2205,15 +2239,15 @@ function AdminView({
           <h1>Moderation</h1>
         </div>
         <div className="segmented">
-          {['services', 'orders', 'reports'].map((tab) => (
+          {['services', 'orders', 'payouts', 'reports'].map((tab) => (
             <button key={tab} className={adminTab === tab ? 'active' : ''} onClick={() => setAdminTab(tab)}>
               {tab}
             </button>
           ))}
         </div>
-        {adminTab === 'orders' && (
+        {['orders', 'payouts'].includes(adminTab) && (
           <button className="secondary-button small" onClick={releaseDueEscrows}>
-            Release due escrows
+            Settle due escrows
           </button>
         )}
       </div>
@@ -2221,6 +2255,7 @@ function AdminView({
       <div className="stats-grid">
         <Metric label="Pending" value={pendingCount} />
         <Metric label="Orders" value={orders.length} />
+        <Metric label="Payouts due" value={pendingPayoutOrders.length} />
         <Metric label="Reports" value={openReports.length} />
       </div>
 
@@ -2284,7 +2319,7 @@ function AdminView({
                 {order.status === ORDER_STATUS.DISPUTED && (
                   <div className="moderation-actions">
                     <button className="secondary-button small" onClick={() => releaseOrder(order.id)}>
-                      Release to seller
+                      Settle for seller
                     </button>
                     <button className="ghost-button small danger" onClick={() => refundOrder(order.id)}>
                       Refund buyer
@@ -2294,6 +2329,62 @@ function AdminView({
               </article>
             );
           })}
+        </div>
+      )}
+
+      {adminTab === 'payouts' && (
+        <div className="list-panel">
+          <div className="section-note">
+            <strong>Pending seller payouts</strong>
+            <p>Settle due escrows first, send Pi manually from the app wallet, then record the payout transaction ID.</p>
+          </div>
+          {payoutOrders.length === 0 ? (
+            <p className="muted-line">No seller payouts are queued.</p>
+          ) : (
+            payoutOrders.map((order) => {
+              const service = services.find((item) => item.id === order.serviceId);
+              const txidDraft = payoutTxids[order.sellerPayoutId] || '';
+              return (
+                <article className="order-card" key={order.sellerPayoutId || order.id}>
+                  <div className="order-title static">
+                    <span>{service?.title ?? 'Removed service'}</span>
+                    <StatusBadge status={formatSellerPayoutStatus(order.sellerPayoutStatus)} />
+                  </div>
+                  <p>Seller: {order.sellerName} · Order: {order.id}</p>
+                  <div className="order-meta-grid">
+                    <Metric label="Gross" value={`${order.amountPi || order.paidPi || 0} Pi`} />
+                    <Metric label={`Fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
+                    <Metric label="Seller net" value={`${order.sellerPayoutPi || 0} Pi`} />
+                    <Metric label="Settled" value={formatDateTimeLabel(order.releasedAt)} />
+                  </div>
+                  {order.sellerPayoutStatus === 'manual_required' ? (
+                    <div className="payout-form">
+                      <input
+                        type="text"
+                        value={txidDraft}
+                        onChange={(event) => updatePayoutTxid(order.sellerPayoutId, event.target.value)}
+                        placeholder="Manual payout transaction ID"
+                      />
+                      <button
+                        className="secondary-button small"
+                        onClick={() => submitPayout(order)}
+                        disabled={!order.sellerPayoutId || !txidDraft.trim()}
+                      >
+                        Mark payout completed
+                      </button>
+                    </div>
+                  ) : order.sellerPayoutStatus === 'paid' ? (
+                    <StatusHint
+                      icon={<ShieldCheck size={18} />}
+                      text={`Payout completed. Transaction ID: ${order.sellerPayoutTxid || 'recorded'}`}
+                    />
+                  ) : (
+                    <StatusHint icon={<Clock3 size={18} />} text={formatSellerPayoutStatus(order.sellerPayoutStatus)} />
+                  )}
+                </article>
+              );
+            })
+          )}
         </div>
       )}
 
@@ -2444,14 +2535,21 @@ function getEscrowHint(order) {
   if (order.escrowStatus === 'release_pending' && order.releaseEligibleAt) {
     return {
       icon: <Clock3 size={18} />,
-      text: `Escrow releases after dispute window: ${formatDateTimeLabel(order.releaseEligibleAt)}`,
+      text: `Funds are held in app escrow. Release available after dispute window: ${formatDateTimeLabel(order.releaseEligibleAt)}`,
     };
   }
 
   if (order.escrowStatus === 'released') {
+    if (order.sellerPayoutStatus === 'paid') {
+      return {
+        icon: <ShieldCheck size={18} />,
+        text: `Payout completed. Transaction ID: ${order.sellerPayoutTxid || 'recorded'}`,
+      };
+    }
+
     return {
       icon: <ShieldCheck size={18} />,
-      text: `Escrow released to seller record: ${formatDateTimeLabel(order.releasedAt)}`,
+      text: 'Escrow settled. Seller payout pending manual transfer.',
     };
   }
 
@@ -2483,11 +2581,17 @@ function formatEscrowStatus(status) {
   if (status === 'holding_deposit') return 'Deposit held';
   if (status === 'holding_full') return 'Full amount held';
   if (status === 'holding') return 'Held';
-  if (status === 'release_pending') return 'Release pending';
-  if (status === 'released') return 'Released';
+  if (status === 'release_pending') return 'Settlement pending';
+  if (status === 'released') return 'Settled';
   if (status === 'disputed') return 'Disputed';
   if (status === 'refunded') return 'Refunded';
   return 'Not funded';
+}
+
+function formatSellerPayoutStatus(status) {
+  if (status === 'paid') return 'Payout paid';
+  if (status === 'manual_required') return 'Payout pending';
+  return 'No payout';
 }
 
 function formatDateTimeLabel(value) {

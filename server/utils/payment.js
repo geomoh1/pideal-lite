@@ -186,6 +186,10 @@ export function serializeOrder(order, viewer = null) {
   const isBuyerViewer = viewerId && viewerId === order.buyerId;
   const canViewDeliveryAssets = isAdminViewer || isSellerViewer || (isBuyerViewer && remainingPi === 0);
   const canPayRemaining = isBuyerViewer && order.status === 'Delivered' && remainingPi > 0;
+  const sellerPayoutRecord = order.sellerPayout || null;
+  const sellerPayoutStatus =
+    sellerPayoutRecord?.payoutStatus ||
+    (escrowStatus === 'released' && sellerPayoutPi > 0 ? 'manual_required' : '');
 
   return {
     id: order.id,
@@ -215,7 +219,11 @@ export function serializeOrder(order, viewer = null) {
     releaseEligibleAt: formatDateTime(order.releaseEligibleAt),
     releasedAt: formatDateTime(order.releasedAt),
     refundRecordedAt: formatDateTime(order.refundRecordedAt),
-    sellerPayoutTxid: order.sellerPayoutTxid || '',
+    sellerPayoutId: sellerPayoutRecord?.id || '',
+    sellerPayoutStatus,
+    sellerPayoutTxid: sellerPayoutRecord?.payoutTxid || order.sellerPayoutTxid || '',
+    sellerPayoutPaidAt: formatDateTime(sellerPayoutRecord?.paidAt),
+    sellerPayoutPaidByAdmin: sellerPayoutRecord?.paidByAdmin || '',
     refundTxid: order.refundTxid || '',
     paidAt: order.paidAt,
     buyerNote: order.buyerNote || '',

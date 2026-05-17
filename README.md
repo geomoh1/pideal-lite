@@ -79,7 +79,7 @@ Requested -> Pending Payment -> Deposit Paid -> In Progress -> Delivered -> Comp
 
 The buyer first sends requirements/materials. The seller must accept the request before the buyer can pay the deposit. Completed deposit and balance payments are recorded as held escrow on the order. After seller delivery, the order is not completed until the buyer pays the remaining balance. If the service was already fully paid, delivery confirmation can complete the order.
 
-When an order becomes `Completed`, PiDeal starts a dispute window controlled by `ESCROW_DISPUTE_WINDOW_HOURS` (`72` by default). If no dispute is opened before `releaseEligibleAt`, the backend records the escrow as released to the seller net of the configured platform fee. If a dispute is opened, release is paused until admin chooses refund or release.
+When an order becomes `Completed`, PiDeal starts a dispute window controlled by `ESCROW_DISPUTE_WINDOW_HOURS` (`72` by default). If no dispute is opened before `releaseEligibleAt`, the backend settles the escrow and queues a `SellerPayout` for the seller net of the configured platform fee. If a dispute is opened, settlement is paused until admin chooses refund or settlement for seller.
 
 For disputes:
 
@@ -88,7 +88,14 @@ Delivered -> Disputed -> Refunded
 Delivered -> Disputed -> Completed
 ```
 
-`Deposit Paid` means the backend completed the deposit payment and holds it in escrow. `Completed` means the full service price has been paid through completed backend payments and the dispute window has started. `Released` escrow records are app-side settlement records; wire them to a real Pi App-to-User payout/refund transaction only when that production capability is available and configured.
+`Deposit Paid` means the backend completed the deposit payment and holds it in escrow. `Completed` means the full service price has been paid through completed backend payments and the dispute window has started. `Released` means the escrow is settled, not paid out. Seller payouts remain `manual_required` until an admin sends Pi manually from the app wallet and records the payout transaction id; only then does the payout become `paid`.
+
+Manual payout flow:
+
+```text
+Completed -> dispute window ends -> escrow settled -> SellerPayout manual_required
+Admin sends Pi manually -> admin records txid -> SellerPayout paid
+```
 
 ## User model
 
@@ -163,6 +170,8 @@ POST /api/orders/:orderId/dispute
 POST /api/orders/:orderId/refund
 POST /api/orders/:orderId/release
 POST /api/escrow/release-due
+GET  /api/seller-payouts
+POST /api/seller-payouts/:payoutId/mark-paid
 GET  /api/orders/:orderId/status
 
 POST /api/session

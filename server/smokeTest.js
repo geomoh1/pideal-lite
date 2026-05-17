@@ -10,6 +10,7 @@ const balancePaymentId = `smoke-payment-${startedAt}-balance`;
 const serviceId = `smoke-service-${startedAt}`;
 const depositTxid = `smoke-tx-${startedAt}-deposit`;
 const balanceTxid = `smoke-tx-${startedAt}-balance`;
+const sellerPayoutTxid = `smoke-payout-tx-${startedAt}`;
 
 if (!/^postgres(?:ql)?:\/\//i.test(String(process.env.DATABASE_URL || ''))) {
   throw new Error('DATABASE_URL must point to PostgreSQL before running npm run test:backend.');
@@ -442,6 +443,8 @@ try {
   assertEqual(buyerCompletedOrder.escrowStatus, 'released', 'Eligible completed escrow must auto-release after the dispute window.');
   assertEqual(buyerCompletedOrder.escrowHeldPi, 0, 'Released escrow must no longer hold buyer funds.');
   assertEqual(buyerCompletedOrder.sellerPayoutPi, 9.7, 'Released escrow must preserve the seller net payout.');
+  assertEqual(buyerCompletedOrder.sellerPayoutStatus, 'manual_required', 'Released escrow must queue a manual seller payout.');
+  assertTruthy(buyerCompletedOrder.sellerPayoutId, 'Released escrow must expose the queued seller payout id.');
   assertTruthy(buyerCompletedOrder.releasedAt, 'Released escrow must record a release timestamp.');
   assertEqual(
     buyerCompletedOrder.deliveryLink,
@@ -453,6 +456,37 @@ try {
     'smoke-delivery.zip',
     'Buyer must receive delivery file name after remaining payment.',
   );
+
+  const rejectedPayoutList = await getJsonExpectFailure('/api/seller-payouts');
+  assertEqual(rejectedPayoutList.status, 401, 'Seller payout queue must require an admin actor.');
+  const payoutList = await getJson('/api/seller-payouts', { actorUserId: 'admin-lina' });
+  const queuedPayout = payoutList.payouts.find((payout) => payout.orderId === orderId);
+  assertTruthy(queuedPayout, 'Released escrow must appear in the seller payout queue.');
+  assertEqual(queuedPayout.netPi, 9.7, 'Queued seller payout must use the net amount.');
+  assertEqual(queuedPayout.payoutStatus, 'manual_required', 'Queued seller payout must require manual verification.');
+
+  const rejectedEmptyPayoutTxid = await postJsonExpectFailure(
+    `/api/seller-payouts/${queuedPayout.id}/mark-paid`,
+    { payoutTxid: '   ' },
+    { actorUserId: 'admin-lina' },
+  );
+  assertEqual(rejectedEmptyPayoutTxid.status, 400, 'Manual seller payout completion must reject empty txids.');
+
+  const paidPayout = await postJson(
+    `/api/seller-payouts/${queuedPayout.id}/mark-paid`,
+    { payoutTxid: sellerPayoutTxid },
+    { actorUserId: 'admin-lina' },
+  );
+  assertEqual(paidPayout.payout.payoutStatus, 'paid', 'Admin must be able to mark a manual seller payout paid.');
+  assertEqual(paidPayout.payout.payoutTxid, sellerPayoutTxid, 'Paid seller payout must store the manual transfer txid.');
+  assertEqual(paidPayout.order.sellerPayoutStatus, 'paid', 'Order serialization must show the paid seller payout status.');
+  assertEqual(paidPayout.order.sellerPayoutTxid, sellerPayoutTxid, 'Order serialization must expose the payout txid.');
+  const rejectedDuplicatePayout = await postJsonExpectFailure(
+    `/api/seller-payouts/${queuedPayout.id}/mark-paid`,
+    { payoutTxid: `${sellerPayoutTxid}-duplicate` },
+    { actorUserId: 'admin-lina' },
+  );
+  assertEqual(rejectedDuplicatePayout.status, 409, 'Manual seller payout completion must reject duplicate paid marking.');
 
   const reviewed = await postJson(`/api/orders/${orderId}/review`, { rating: 5 });
   assertEqual(reviewed.order.rating, 5, 'Review rating must persist on the order response.');
@@ -624,6 +658,21 @@ async function getText(path) {
   }
 
   return text;
+}
+
+async function getJsonExpectFailure(path, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: {
+      ...(options.actorUserId ? { 'X-PiDeal-User-Id': options.actorUserId } : {}),
+    },
+  });
+  const data = await response.json().catch(() => null);
+
+  if (response.ok || data?.ok) {
+    throw new Error(`Expected ${path} to fail, but it succeeded.`);
+  }
+
+  return { status: response.status, data };
 }
 
 async function postJson(path, body, options = {}) {

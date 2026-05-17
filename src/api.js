@@ -151,6 +151,10 @@ export async function releaseDueEscrows(actor) {
   return postJsonAs('/api/escrow/release-due', {}, actor);
 }
 
+export async function markSellerPayoutPaid(payoutId, payoutTxid, actor) {
+  return postJsonAs(`/api/seller-payouts/${encodeURIComponent(payoutId)}/mark-paid`, { payoutTxid }, actor);
+}
+
 export async function createReport(report) {
   const data = await postJson('/api/reports', report);
   return data.report;

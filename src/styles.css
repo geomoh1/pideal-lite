@@ -1215,12 +1215,39 @@ textarea {
   line-height: 1.35;
 }
 
+.section-note {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(45, 143, 111, 0.24);
+  border-radius: 8px;
+  background: #eef9f4;
+}
+
+.section-note strong {
+  color: #185540;
+}
+
+.section-note p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 .form-panel input,
 .form-panel select,
 .request-materials input,
-.delivery-form input {
+.delivery-form input,
+.payout-form input {
   height: 46px;
   padding: 0 12px;
+}
+
+.payout-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .file-field input {
@@ -1564,6 +1591,12 @@ textarea {
   .report-card {
     grid-template-columns: 1fr auto;
     align-items: center;
+  }
+}
+
+@media (max-width: 520px) {
+  .payout-form {
+    grid-template-columns: 1fr;
   }
 }
 

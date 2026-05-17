@@ -62,6 +62,12 @@ const ESCROW_EVENT_TYPE = {
   DISPUTE_OPENED: 'dispute_opened',
   RELEASED: 'released',
   REFUNDED: 'refunded',
+  PAYOUT_PAID: 'payout_paid',
+};
+
+const SELLER_PAYOUT_STATUS = {
+  MANUAL_REQUIRED: 'manual_required',
+  PAID: 'paid',
 };
 
 const PUBLIC_SERVICE_TEXT = {
@@ -176,6 +182,7 @@ const ORDER_INCLUDE = {
   },
   review: true,
   service: true,
+  sellerPayout: true,
   escrowEvents: {
     orderBy: { createdAt: 'desc' },
     take: 8,
@@ -185,6 +192,15 @@ const ORDER_INCLUDE = {
 const REPORT_INCLUDE = {
   service: true,
   reporter: true,
+};
+
+const SELLER_PAYOUT_INCLUDE = {
+  seller: true,
+  order: {
+    include: {
+      service: true,
+    },
+  },
 };
 
 app.use(express.json({ limit: '256kb' }));
@@ -265,6 +281,92 @@ app.post('/api/escrow/release-due', requireAdmin, async (request, response, next
       ok: true,
       releasedCount: result.releasedCount,
       orderIds: result.orderIds,
+      payoutIds: result.payoutIds,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/seller-payouts', requireAdmin, async (request, response, next) => {
+  try {
+    const payouts = await prisma.sellerPayout.findMany({
+      include: SELLER_PAYOUT_INCLUDE,
+      orderBy: [
+        { payoutStatus: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    });
+
+    return response.json({ ok: true, payouts: payouts.map(serializeSellerPayout) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/seller-payouts/:payoutId/mark-paid', requireAdmin, async (request, response, next) => {
+  try {
+    const payoutTxid = requiredString(request.body?.payoutTxid || request.body?.txid, 'payoutTxid');
+    const paidAt = new Date();
+
+    const existingPayout = await prisma.sellerPayout.findUnique({
+      where: { id: request.params.payoutId },
+      include: SELLER_PAYOUT_INCLUDE,
+    });
+
+    if (!existingPayout) {
+      return response.status(404).json({ ok: false, error: 'Seller payout was not found.' });
+    }
+    if (existingPayout.payoutStatus === SELLER_PAYOUT_STATUS.PAID) {
+      return response.status(409).json({ ok: false, error: 'Seller payout is already marked paid.' });
+    }
+    if (existingPayout.payoutStatus !== SELLER_PAYOUT_STATUS.MANUAL_REQUIRED) {
+      return response.status(409).json({ ok: false, error: 'Only manual-required seller payouts can be marked paid.' });
+    }
+
+    const { payout, order } = await prisma.$transaction(async (tx) => {
+      const payout = await tx.sellerPayout.update({
+        where: { id: existingPayout.id },
+        data: {
+          payoutStatus: SELLER_PAYOUT_STATUS.PAID,
+          payoutTxid,
+          paidAt,
+          paidByAdmin: request.actor.id,
+        },
+        include: SELLER_PAYOUT_INCLUDE,
+      });
+
+      await tx.order.update({
+        where: { id: existingPayout.orderId },
+        data: {
+          sellerPayoutTxid: payoutTxid,
+        },
+      });
+
+      await tx.escrowEvent.create({
+        data: {
+          orderId: existingPayout.orderId,
+          actorId: request.actor.id,
+          type: ESCROW_EVENT_TYPE.PAYOUT_PAID,
+          amountPi: existingPayout.netPi,
+          status: ESCROW_STATUS.RELEASED,
+          txid: payoutTxid,
+          note: 'Manual seller payout completed and verified by admin.',
+        },
+      });
+
+      const order = await tx.order.findUnique({
+        where: { id: existingPayout.orderId },
+        include: ORDER_INCLUDE,
+      });
+
+      return { payout, order };
+    });
+
+    return response.json({
+      ok: true,
+      payout: serializeSellerPayout(payout),
+      order: serializeOrder(order, request.actor),
     });
   } catch (error) {
     return next(error);
@@ -775,13 +877,12 @@ app.post('/api/orders/:orderId/release', requireAdmin, async (request, response,
     const releasedAt = new Date();
     const releaseUpdate = buildEscrowReleaseUpdate(order, releasedAt);
     const updatedOrder = await prisma.$transaction(async (tx) => {
-      const updatedOrder = await tx.order.update({
+      await tx.order.update({
         where: { id: request.params.orderId },
         data: {
           status: ORDER_STATUS.COMPLETED,
           ...releaseUpdate,
         },
-        include: ORDER_INCLUDE,
       });
 
       await tx.escrowEvent.create({
@@ -791,11 +892,16 @@ app.post('/api/orders/:orderId/release', requireAdmin, async (request, response,
           type: ESCROW_EVENT_TYPE.RELEASED,
           amountPi: releaseUpdate.sellerPayoutPi,
           status: ESCROW_STATUS.RELEASED,
-          note: 'Admin resolved dispute in favor of seller and released escrow.',
+          note: 'Admin resolved dispute in favor of seller. Escrow settled and seller payout queued for manual transfer.',
         },
       });
 
-      return updatedOrder;
+      await queueSellerPayout(tx, order, releaseUpdate, releasedAt);
+
+      return tx.order.findUnique({
+        where: { id: request.params.orderId },
+        include: ORDER_INCLUDE,
+      });
     });
 
     return response.json({ ok: true, order: serializeOrder(updatedOrder, request.actor) });
@@ -1632,6 +1738,12 @@ function truncateText(value, maxLength) {
   return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
 }
 
+function formatDateTimeValue(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function formatPublicSellerStatus(status, t = PUBLIC_SERVICE_TEXT.en) {
   if (status === 'verified') return t.verifiedSeller;
   if (status === 'blocked') return t.underReview;
@@ -1869,6 +1981,7 @@ async function releaseEligibleEscrows(now = new Date()) {
     include: ORDER_INCLUDE,
   });
   const orderIds = [];
+  const payoutIds = [];
 
   for (const order of dueOrders) {
     const released = await prisma.$transaction(async (tx) => {
@@ -1900,22 +2013,53 @@ async function releaseEligibleEscrows(now = new Date()) {
           type: ESCROW_EVENT_TYPE.RELEASED,
           amountPi: releaseUpdate.sellerPayoutPi,
           status: ESCROW_STATUS.RELEASED,
-          note: 'Escrow automatically released after the dispute window ended without an open dispute.',
+          note: 'Escrow settled after the dispute window ended without an open dispute. Seller payout queued for manual transfer.',
         },
       });
 
-      return true;
+      const payout = await queueSellerPayout(tx, currentOrder, releaseUpdate, now);
+
+      return {
+        orderId: currentOrder.id,
+        payoutId: payout?.id || '',
+      };
     });
 
     if (released) {
-      orderIds.push(order.id);
+      orderIds.push(released.orderId);
+      if (released.payoutId) payoutIds.push(released.payoutId);
     }
   }
 
   return {
     releasedCount: orderIds.length,
     orderIds,
+    payoutIds,
   };
+}
+
+async function queueSellerPayout(tx, order, releaseUpdate, now = new Date()) {
+  if (!order?.id || !order.sellerId || Number(releaseUpdate.sellerPayoutPi || 0) <= 0) {
+    return null;
+  }
+
+  const existingPayout = await tx.sellerPayout.findUnique({
+    where: { orderId: order.id },
+  });
+
+  if (existingPayout) return existingPayout;
+
+  return tx.sellerPayout.create({
+    data: {
+      orderId: order.id,
+      sellerId: order.sellerId,
+      grossPi: Number(releaseUpdate.amountPi || 0),
+      platformFeePi: Number(releaseUpdate.platformFeePi || 0),
+      netPi: Number(releaseUpdate.sellerPayoutPi || 0),
+      payoutStatus: SELLER_PAYOUT_STATUS.MANUAL_REQUIRED,
+      createdAt: now,
+    },
+  });
 }
 
 function getEscrowReleaseEligibleAt(now = new Date()) {
@@ -2097,10 +2241,11 @@ async function getNotificationsForUser(user) {
 async function getAdminNotifications() {
   const notifications = [];
 
-  const [pendingServices, openReports, disputedOrders, sellersAwaitingVerification] = await Promise.all([
+  const [pendingServices, openReports, disputedOrders, pendingSellerPayouts, sellersAwaitingVerification] = await Promise.all([
     prisma.service.count({ where: { status: 'pending' } }),
     prisma.report.count({ where: { status: 'open' } }),
     prisma.order.count({ where: { status: ORDER_STATUS.DISPUTED } }),
+    prisma.sellerPayout.count({ where: { payoutStatus: SELLER_PAYOUT_STATUS.MANUAL_REQUIRED } }),
     prisma.user.count({
       where: {
         sellerStatus: 'unverified',
@@ -2148,6 +2293,19 @@ async function getAdminNotifications() {
     }));
   }
 
+  if (pendingSellerPayouts > 0) {
+    notifications.push(createNotification({
+      id: 'admin-pending-seller-payouts',
+      type: 'admin_pending_seller_payouts',
+      title: 'Pending seller payouts',
+      message: `${pendingSellerPayouts} seller payout needs manual transfer verification.`,
+      targetType: 'admin',
+      targetId: 'payouts',
+      actionLabel: 'Complete seller payouts',
+      severity: 'warning',
+    }));
+  }
+
   if (sellersAwaitingVerification > 0) {
     notifications.push(createNotification({
       id: 'admin-seller-verification',
@@ -2174,6 +2332,25 @@ function createNotification({ id, type, title, message, targetType, targetId, ac
     targetId,
     actionLabel,
     severity,
+  };
+}
+
+function serializeSellerPayout(payout) {
+  return {
+    id: payout.id,
+    orderId: payout.orderId,
+    sellerId: payout.sellerId,
+    sellerName: payout.seller?.username || payout.order?.sellerName || 'seller',
+    serviceTitle: payout.order?.service?.title || 'Order payout',
+    grossPi: Number(payout.grossPi || 0),
+    platformFeePi: Number(payout.platformFeePi || 0),
+    netPi: Number(payout.netPi || 0),
+    payoutStatus: payout.payoutStatus,
+    payoutTxid: payout.payoutTxid || '',
+    paidAt: formatDateTimeValue(payout.paidAt),
+    paidByAdmin: payout.paidByAdmin || '',
+    releasedAt: formatDateTimeValue(payout.order?.releasedAt),
+    createdAt: formatDateTimeValue(payout.createdAt),
   };
 }
 
