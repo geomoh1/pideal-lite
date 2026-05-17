@@ -182,6 +182,7 @@ const ORDER_INCLUDE = {
   },
   review: true,
   service: true,
+  seller: true,
   sellerPayout: true,
   escrowEvents: {
     orderBy: { createdAt: 'desc' },
@@ -199,6 +200,7 @@ const SELLER_PAYOUT_INCLUDE = {
   order: {
     include: {
       service: true,
+      seller: true,
     },
   },
 };
@@ -299,6 +301,37 @@ app.get('/api/seller-payouts', requireAdmin, async (request, response, next) => 
     });
 
     return response.json({ ok: true, payouts: payouts.map(serializeSellerPayout) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/users/payout-wallet', async (request, response, next) => {
+  try {
+    const userId = getActorUserId(request);
+
+    if (!userId) {
+      return response.status(401).json({ ok: false, error: 'User id is required to update payout wallet.' });
+    }
+
+    const walletAddress = normalizePiWalletAddress(request.body?.piWalletAddress);
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!existingUser) {
+      return response.status(404).json({ ok: false, error: 'User was not found.' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        piWalletAddress: walletAddress,
+        piWalletVerifiedAt: new Date(),
+      },
+    });
+
+    return response.json({ ok: true, user: serializeUser(user) });
   } catch (error) {
     return next(error);
   }
@@ -1426,6 +1459,22 @@ function normalizeOrderInput(body) {
   };
 }
 
+function normalizePiWalletAddress(value) {
+  const walletAddress = requiredString(value, 'piWalletAddress').toUpperCase();
+
+  if (/\s/.test(walletAddress)) {
+    badRequest('Pi wallet address must not contain spaces. Enter the public wallet address only, never a passphrase.');
+  }
+  if (walletAddress.startsWith('S')) {
+    badRequest('Do not enter a secret key or passphrase. Only the public Pi wallet address is allowed.');
+  }
+  if (!/^G[A-Z2-7]{55}$/.test(walletAddress)) {
+    badRequest('Pi wallet address format is invalid. Enter the public address that starts with G.');
+  }
+
+  return walletAddress;
+}
+
 async function findOrderById(orderId) {
   return prisma.order.findUnique({
     where: { id: orderId },
@@ -2336,11 +2385,15 @@ function createNotification({ id, type, title, message, targetType, targetId, ac
 }
 
 function serializeSellerPayout(payout) {
+  const sellerWalletAddress = payout.seller?.piWalletAddress || payout.order?.seller?.piWalletAddress || '';
+
   return {
     id: payout.id,
     orderId: payout.orderId,
     sellerId: payout.sellerId,
     sellerName: payout.seller?.username || payout.order?.sellerName || 'seller',
+    sellerWalletAddress,
+    sellerWalletVerifiedAt: formatDateTimeValue(payout.seller?.piWalletVerifiedAt || payout.order?.seller?.piWalletVerifiedAt),
     serviceTitle: payout.order?.service?.title || 'Order payout',
     grossPi: Number(payout.grossPi || 0),
     platformFeePi: Number(payout.platformFeePi || 0),
@@ -2360,6 +2413,8 @@ function serializeUser(user) {
     username: user.username,
     role: user.role,
     sellerStatus: user.sellerStatus,
+    piWalletAddress: user.piWalletAddress || '',
+    piWalletVerifiedAt: formatDateTimeValue(user.piWalletVerifiedAt),
   };
 }
 

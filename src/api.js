@@ -82,6 +82,11 @@ export async function syncUserSession(user) {
   return data.user;
 }
 
+export async function updatePayoutWallet(piWalletAddress, actor) {
+  const data = await postJsonAs('/api/users/payout-wallet', { piWalletAddress }, actor);
+  return data.user;
+}
+
 export async function createService(listing) {
   const data = await postJson('/api/services', listing);
   return data.service;

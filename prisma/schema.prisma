@@ -12,6 +12,8 @@ model User {
   username        String
   role            String    @default("user")
   sellerStatus    String    @default("unverified")
+  piWalletAddress String?
+  piWalletVerifiedAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   services        Service[]

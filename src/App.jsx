@@ -53,6 +53,7 @@ import {
   reviewOrder as reviewOrderApi,
   startOrder as startOrderApi,
   syncUserSession,
+  updatePayoutWallet as updatePayoutWalletApi,
   updateSellerStatus as updateSellerStatusApi,
   updateServiceStatus,
 } from './api.js';
@@ -141,6 +142,7 @@ function App() {
   const [orderTab, setOrderTab] = useState('buyer');
   const [adminTab, setAdminTab] = useState('services');
   const [deliveryDrafts, setDeliveryDrafts] = useState({});
+  const [payoutWalletDraft, setPayoutWalletDraft] = useState('');
   const [flowError, setFlowError] = useState('');
   const [flowNotice, setFlowNotice] = useState('');
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
@@ -164,6 +166,10 @@ function App() {
     document.documentElement.lang = language;
     document.documentElement.dir = appDirection;
   }, [appDirection, language]);
+
+  useEffect(() => {
+    setPayoutWalletDraft(user?.piWalletAddress || '');
+  }, [user?.piWalletAddress]);
 
   const refreshAppData = useCallback(async ({
     actor = null,
@@ -866,6 +872,25 @@ function App() {
     }
   }
 
+  async function savePayoutWallet() {
+    if (!user) {
+      setFlowError('Pi Login is required before saving a payout wallet.');
+      setFlowNotice('');
+      return;
+    }
+
+    try {
+      const updatedUser = await updatePayoutWalletApi(payoutWalletDraft, user);
+      setUser((current) => ({ ...current, ...updatedUser }));
+      setFlowNotice('Payout wallet address saved.');
+      setFlowError('');
+      await refreshAppData({ actor: { ...user, ...updatedUser }, showRefreshIndicator: true });
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Payout wallet address could not be saved.'));
+      setFlowNotice('');
+    }
+  }
+
   return (
     <I18nProvider language={language}>
       <Localized>
@@ -989,6 +1014,9 @@ function App() {
             sellerOrders={userSellerOrders}
             onLogin={handlePiLogin}
             openService={openService}
+            payoutWalletDraft={payoutWalletDraft}
+            setPayoutWalletDraft={setPayoutWalletDraft}
+            onSavePayoutWallet={savePayoutWallet}
           />
         )}
 
@@ -2108,6 +2136,9 @@ function ProfileView({
   sellerOrders,
   onLogin,
   openService,
+  payoutWalletDraft,
+  setPayoutWalletDraft,
+  onSavePayoutWallet,
 }) {
   const profileModes = isAdmin ? ['Browse', 'Sell', 'Admin'] : ['Browse', 'Sell'];
   const completedOrders = [...buyerOrders, ...sellerOrders].filter(
@@ -2152,6 +2183,36 @@ function ProfileView({
         <Metric label="Seller orders" value={sellerOrders.length} />
         <Metric label="Completed" value={completedOrders.length} />
       </div>
+
+      {user && (
+        <section className="list-panel">
+          <div className="section-heading tight">
+            <h2>Payout wallet address</h2>
+            {user.piWalletAddress && <span className="count-pill">saved</span>}
+          </div>
+          <div className="request-materials">
+            <label>
+              Public Pi wallet address
+              <input
+                type="text"
+                value={payoutWalletDraft}
+                onChange={(event) => setPayoutWalletDraft(event.target.value)}
+                placeholder="G..."
+                autoComplete="off"
+                spellCheck="false"
+              />
+            </label>
+            <p className="field-hint">Enter your public Pi wallet address only. Never enter your passphrase, private key, or seed phrase.</p>
+            <button
+              className="secondary-button"
+              onClick={onSavePayoutWallet}
+              disabled={!payoutWalletDraft.trim() || payoutWalletDraft.trim() === (user.piWalletAddress || '')}
+            >
+              Save payout wallet
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="list-panel">
         <div className="section-heading tight">
@@ -2357,6 +2418,19 @@ function AdminView({
                     <Metric label="Seller net" value={`${order.sellerPayoutPi || 0} Pi`} />
                     <Metric label="Settled" value={formatDateTimeLabel(order.releasedAt)} />
                   </div>
+                  {order.sellerWalletAddress ? (
+                    <div className="wallet-address-row">
+                      <span>
+                        <strong>Seller wallet address</strong>
+                        <code>{order.sellerWalletAddress}</code>
+                      </span>
+                      <button className="ghost-button small" onClick={() => copyText(order.sellerWalletAddress)}>
+                        Copy address
+                      </button>
+                    </div>
+                  ) : (
+                    <StatusHint icon={<AlertTriangle size={18} />} text="Seller payout wallet address is missing." />
+                  )}
                   {order.sellerPayoutStatus === 'manual_required' ? (
                     <div className="payout-form">
                       <input
@@ -2623,6 +2697,11 @@ function getServiceShareUrl(service, language = 'en') {
 function getPrivateExecutionUrl(service) {
   if (typeof window === 'undefined') return '';
   return `${window.location.origin}/?service=${encodeURIComponent(service.slug || service.id)}&from=public`;
+}
+
+async function copyText(value) {
+  if (!value || typeof navigator === 'undefined' || !navigator.clipboard) return;
+  await navigator.clipboard.writeText(value).catch(() => {});
 }
 
 function formatSellerStatus(status) {

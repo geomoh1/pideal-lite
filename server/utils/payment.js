@@ -224,6 +224,8 @@ export function serializeOrder(order, viewer = null) {
     sellerPayoutTxid: sellerPayoutRecord?.payoutTxid || order.sellerPayoutTxid || '',
     sellerPayoutPaidAt: formatDateTime(sellerPayoutRecord?.paidAt),
     sellerPayoutPaidByAdmin: sellerPayoutRecord?.paidByAdmin || '',
+    sellerWalletAddress: isAdminViewer || isSellerViewer ? order.seller?.piWalletAddress || '' : '',
+    sellerWalletVerifiedAt: isAdminViewer || isSellerViewer ? formatDateTime(order.seller?.piWalletVerifiedAt) : '',
     refundTxid: order.refundTxid || '',
     paidAt: order.paidAt,
     buyerNote: order.buyerNote || '',

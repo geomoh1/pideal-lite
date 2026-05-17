@@ -1250,6 +1250,30 @@ textarea {
   align-items: center;
 }
 
+.wallet-address-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf7;
+}
+
+.wallet-address-row span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wallet-address-row code {
+  overflow-wrap: anywhere;
+  color: var(--brand-dark);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .file-field input {
   height: auto;
   padding: 11px;
@@ -1595,7 +1619,8 @@ textarea {
 }
 
 @media (max-width: 520px) {
-  .payout-form {
+  .payout-form,
+  .wallet-address-row {
     grid-template-columns: 1fr;
   }
 }

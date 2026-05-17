@@ -11,6 +11,7 @@ const serviceId = `smoke-service-${startedAt}`;
 const depositTxid = `smoke-tx-${startedAt}-deposit`;
 const balanceTxid = `smoke-tx-${startedAt}-balance`;
 const sellerPayoutTxid = `smoke-payout-tx-${startedAt}`;
+const smokeSellerWalletAddress = `G${'A'.repeat(55)}`;
 
 if (!/^postgres(?:ql)?:\/\//i.test(String(process.env.DATABASE_URL || ''))) {
   throw new Error('DATABASE_URL must point to PostgreSQL before running npm run test:backend.');
@@ -221,6 +222,19 @@ try {
     { actorUserId: 'admin-lina' },
   );
   assertEqual(verifiedSeller.user.sellerStatus, 'verified', 'Admin must be able to verify a seller.');
+
+  const rejectedPayoutWallet = await postJsonExpectFailure(
+    '/api/users/payout-wallet',
+    { piWalletAddress: 'apple banana cherry date elderberry fig grape honey' },
+    { actorUserId: 'smoke-seller' },
+  );
+  assertEqual(rejectedPayoutWallet.status, 400, 'Seller payout wallet must reject passphrase-like input.');
+  const savedPayoutWallet = await postJson(
+    '/api/users/payout-wallet',
+    { piWalletAddress: smokeSellerWalletAddress.toLowerCase() },
+    { actorUserId: 'smoke-seller' },
+  );
+  assertEqual(savedPayoutWallet.user.piWalletAddress, smokeSellerWalletAddress, 'Seller payout wallet must be normalized and saved.');
 
   const services = await getJson('/api/services');
   assertTruthy(
@@ -445,6 +459,7 @@ try {
   assertEqual(buyerCompletedOrder.sellerPayoutPi, 9.7, 'Released escrow must preserve the seller net payout.');
   assertEqual(buyerCompletedOrder.sellerPayoutStatus, 'manual_required', 'Released escrow must queue a manual seller payout.');
   assertTruthy(buyerCompletedOrder.sellerPayoutId, 'Released escrow must expose the queued seller payout id.');
+  assertEqual(buyerCompletedOrder.sellerWalletAddress, '', 'Buyer order payload must not expose seller payout wallet address.');
   assertTruthy(buyerCompletedOrder.releasedAt, 'Released escrow must record a release timestamp.');
   assertEqual(
     buyerCompletedOrder.deliveryLink,
@@ -457,6 +472,10 @@ try {
     'Buyer must receive delivery file name after remaining payment.',
   );
 
+  const adminOrdersAfterRelease = await getJson('/api/orders', { actorUserId: 'admin-lina' });
+  const adminCompletedOrder = adminOrdersAfterRelease.orders.find((order) => order.id === orderId);
+  assertEqual(adminCompletedOrder.sellerWalletAddress, smokeSellerWalletAddress, 'Admin order payload must expose seller payout wallet address.');
+
   const rejectedPayoutList = await getJsonExpectFailure('/api/seller-payouts');
   assertEqual(rejectedPayoutList.status, 401, 'Seller payout queue must require an admin actor.');
   const payoutList = await getJson('/api/seller-payouts', { actorUserId: 'admin-lina' });
@@ -464,6 +483,7 @@ try {
   assertTruthy(queuedPayout, 'Released escrow must appear in the seller payout queue.');
   assertEqual(queuedPayout.netPi, 9.7, 'Queued seller payout must use the net amount.');
   assertEqual(queuedPayout.payoutStatus, 'manual_required', 'Queued seller payout must require manual verification.');
+  assertEqual(queuedPayout.sellerWalletAddress, smokeSellerWalletAddress, 'Queued seller payout must expose the public seller wallet address.');
 
   const rejectedEmptyPayoutTxid = await postJsonExpectFailure(
     `/api/seller-payouts/${queuedPayout.id}/mark-paid`,

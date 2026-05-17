@@ -90,6 +90,8 @@ Delivered -> Disputed -> Completed
 
 `Deposit Paid` means the backend completed the deposit payment and holds it in escrow. `Completed` means the full service price has been paid through completed backend payments and the dispute window has started. `Released` means the escrow is settled, not paid out. Seller payouts remain `manual_required` until an admin sends Pi manually from the app wallet and records the payout transaction id; only then does the payout become `paid`.
 
+Sellers must add a public Pi payout wallet address in Profile before manual payouts can be completed cleanly. PiDeal stores only the public receiving address and never asks for, stores, or needs a wallet passphrase, private key, or seed phrase.
+
 Manual payout flow:
 
 ```text
@@ -175,6 +177,7 @@ POST /api/seller-payouts/:payoutId/mark-paid
 GET  /api/orders/:orderId/status
 
 POST /api/session
+POST /api/users/payout-wallet
 
 GET  /api/reports
 POST /api/reports
