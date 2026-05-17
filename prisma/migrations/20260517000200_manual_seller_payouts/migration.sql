@@ -21,24 +21,13 @@ CREATE INDEX IF NOT EXISTS "SellerPayout_sellerId_idx" ON "SellerPayout"("seller
 CREATE INDEX IF NOT EXISTS "SellerPayout_payoutStatus_idx" ON "SellerPayout"("payoutStatus");
 CREATE INDEX IF NOT EXISTS "SellerPayout_createdAt_idx" ON "SellerPayout"("createdAt");
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'SellerPayout_orderId_fkey'
-  ) THEN
-    ALTER TABLE "SellerPayout"
-      ADD CONSTRAINT "SellerPayout_orderId_fkey"
-      FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-  END IF;
+ALTER TABLE "SellerPayout"
+  ADD CONSTRAINT "SellerPayout_orderId_fkey"
+  FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'SellerPayout_sellerId_fkey'
-  ) THEN
-    ALTER TABLE "SellerPayout"
-      ADD CONSTRAINT "SellerPayout_sellerId_fkey"
-      FOREIGN KEY ("sellerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-  END IF;
-END $$;
+ALTER TABLE "SellerPayout"
+  ADD CONSTRAINT "SellerPayout_sellerId_fkey"
+  FOREIGN KEY ("sellerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 INSERT INTO "SellerPayout" (
   "id",
