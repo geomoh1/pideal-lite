@@ -230,6 +230,16 @@ Use `PI_USE_MOCK_PAYMENTS=true` for local development without a Pi server API ke
 
 `VITE_API_BASE_URL` controls where the React app sends `/api` calls. Leave it empty in local development so Vite can proxy `/api` to `http://127.0.0.1:4000`. Set it to the deployed backend HTTPS URL before building for Vercel or Netlify, for example `https://your-pideal-backend.onrender.com`.
 
+Public Pi review pages:
+
+```text
+/privacy
+/terms
+/contact
+```
+
+Use `/privacy` as the Privacy Policy URL, `/terms` as the Terms URL, `pideal.support@gmail.com` as the developer contact, and `https://github.com/geomoh1/pideal-lite` as the repository URL if the repository is public.
+
 `PUBLIC_SITE_URL` is the public origin used by backend-rendered share pages such as `/service/:slug`. `VITE_PUBLIC_SITE_URL` should point to the same public origin so the SPA share button creates links with real Open Graph previews. Share links include `?lang=ar` or `?lang=en` so public landing pages render in the sharer's current app language.
 
 `VITE_ENABLE_PI_SDK=false` keeps local development from forcing Pi SDK auth. In deployed builds, if the official SDK is present, the app can auto-trigger Pi authentication for Pi App Studio verification. Setting `VITE_ENABLE_PI_SDK=true` still forces SDK auth explicitly, and `?pi_sdk=1` can be used for an intentional one-off local SDK test.

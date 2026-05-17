@@ -128,6 +128,229 @@ const orderFlowSteps = [
 ];
 
 function App() {
+  const legalRoute = getLegalRoute();
+  if (legalRoute) {
+    return <LegalPage route={legalRoute} />;
+  }
+
+  return <MarketplaceApp />;
+}
+
+const legalDocuments = {
+  privacy: {
+    eyebrow: 'Privacy Policy',
+    title: 'PiDeal Privacy Policy',
+    updated: 'Last updated: May 17, 2026',
+    intro:
+      'PiDeal is a Pi Network powered marketplace for digital services. This policy explains what data we collect, why we collect it, and how we protect marketplace payments, escrow, delivery, and disputes.',
+    sections: [
+      {
+        title: 'Information We Collect',
+        items: [
+          'Pi login information verified through the Pi SDK, including your Pi user id and username.',
+          'Marketplace profile information such as seller status, service listings, order details, reviews, reports, and payout wallet address if you choose to provide one.',
+          'Payment records needed for Pi payment approval, completion, escrow accounting, platform fee calculation, payout tracking, and dispute handling.',
+          'Delivery and request metadata such as notes, links, file names, and file sizes. PiDeal currently records metadata and does not ask for wallet passphrases.',
+        ],
+      },
+      {
+        title: 'How We Use Information',
+        items: [
+          'To authenticate users with verified Pi identity and prevent impersonation.',
+          'To run orders, escrow status, protected delivery, reviews, reports, and admin moderation.',
+          'To verify Pi payments, track deposits and remaining balances, queue seller payouts, and resolve disputes.',
+          'To protect buyers and sellers from fraud, unsafe links, external payment attempts, and policy abuse.',
+        ],
+      },
+      {
+        title: 'Payments, Escrow, And Payouts',
+        items: [
+          'Buyer payments are processed through Pi payment flows and recorded by PiDeal after backend approval and completion.',
+          'Funds are treated as held by app escrow until delivery, buyer completion, dispute review, or release after the dispute window.',
+          'Seller payouts may be manually verified by an admin and can include a public payout transaction id.',
+          'PiDeal never asks for, stores, or needs your Pi wallet passphrase, private key, or seed phrase.',
+        ],
+      },
+      {
+        title: 'Sharing And Disclosure',
+        items: [
+          'Normal users only receive order information related to their own buyer or seller orders.',
+          'Admins may access reports, disputes, orders, and payout information to operate the marketplace safely.',
+          'Public service pages may show service title, description, price, delivery time, seller display name, rating, and trust markers.',
+          'We do not sell personal data.',
+        ],
+      },
+      {
+        title: 'Data Security And Retention',
+        items: [
+          'PiDeal uses backend authentication, httpOnly session cookies, ownership checks, URL safety rules, and admin-only moderation endpoints.',
+          'Order, payment, report, review, and payout records may be retained as needed for marketplace integrity, accounting, abuse prevention, and dispute history.',
+          'If you believe a record is inaccurate or unsafe, contact the developer support email below.',
+        ],
+      },
+    ],
+  },
+  terms: {
+    eyebrow: 'Terms of Service',
+    title: 'PiDeal Terms of Service',
+    updated: 'Last updated: May 17, 2026',
+    intro:
+      'These terms describe the basic rules for using PiDeal as a buyer, seller, or admin-reviewed marketplace participant.',
+    sections: [
+      {
+        title: 'Marketplace Role',
+        items: [
+          'PiDeal provides a marketplace layer for digital services, Pi identity, escrow-style order tracking, protected delivery, and dispute handling.',
+          'Sellers are responsible for accurately describing services, delivery scope, timelines, revision policy, and buyer requirements.',
+          'Buyers are responsible for providing clear order requirements and paying required deposits or remaining balances through approved Pi flows.',
+        ],
+      },
+      {
+        title: 'Escrow And Delivery',
+        items: [
+          'Deposits and full payments are recorded by the backend only after Pi payment approval and completion.',
+          'Delivery assets may remain locked from the buyer until the remaining balance is completed.',
+          'After completion, escrow may remain pending during the configured dispute window before seller payout is queued.',
+          'A payout marked as settled is an internal escrow decision; a payout marked as paid requires a recorded manual transfer transaction id.',
+        ],
+      },
+      {
+        title: 'Prohibited Behavior',
+        items: [
+          'Do not request or share wallet passphrases, private keys, seed phrases, or other secrets.',
+          'Do not use listings, requests, delivery notes, or reports to move transactions outside PiDeal escrow.',
+          'Do not post malicious links, short links, external payment links, direct contact links, spam, illegal content, or misleading service claims.',
+          'PiDeal may reject, block, remove, refund, or escalate activity that appears unsafe or abusive.',
+        ],
+      },
+      {
+        title: 'Disputes And Admin Review',
+        items: [
+          'Buyers may open disputes for eligible delivered or completed orders before escrow is finally resolved.',
+          'Admins may review reports, disputes, services, users, payment records, and delivery metadata to make marketplace decisions.',
+          'Admin decisions can result in refund records, seller settlement, seller payout queueing, service rejection, or seller blocking.',
+        ],
+      },
+      {
+        title: 'Availability And Changes',
+        items: [
+          'PiDeal is provided as a digital marketplace service and may change as Pi Network platform requirements evolve.',
+          'Features, fees, escrow windows, moderation rules, and payout procedures may be updated for security, compliance, or operational reasons.',
+          'Continued use of PiDeal means you accept the current terms and marketplace safety rules.',
+        ],
+      },
+    ],
+  },
+  contact: {
+    eyebrow: 'Contact Developer',
+    title: 'Contact PiDeal Developer Support',
+    updated: 'Support channel for Pi Browser and PiNet review',
+    intro:
+      'For privacy questions, payment support, reports, dispute follow-up, app review, or developer contact, use the official support details below.',
+    sections: [
+      {
+        title: 'Support Email',
+        items: [
+          'Email: pideal.support@gmail.com',
+          'Use this email for account, privacy, payment, escrow, dispute, seller payout, or app review questions.',
+          'Never send a wallet passphrase, private key, or seed phrase. PiDeal support will never ask for secrets.',
+        ],
+      },
+      {
+        title: 'Repository',
+        items: [
+          'GitHub: https://github.com/geomoh1/pideal-lite',
+          'Repository visibility may depend on the project owner settings.',
+        ],
+      },
+      {
+        title: 'Recommended Pi Developer Portal Values',
+        items: [
+          'Privacy Policy URL: /privacy',
+          'Terms URL: /terms',
+          'Contact Developer: pideal.support@gmail.com',
+          'Repository: https://github.com/geomoh1/pideal-lite',
+        ],
+      },
+    ],
+  },
+};
+
+function LegalPage({ route }) {
+  const document = legalDocuments[route] || legalDocuments.privacy;
+
+  useEffect(() => {
+    window.document.title = `${document.title} | PiDeal`;
+  }, [document.title]);
+
+  return (
+    <main className="legal-shell">
+      <header className="legal-header">
+        <a className="legal-brand" href="/" aria-label="Open PiDeal">
+          <img src="/pideal-logo.svg" alt="PiDeal" />
+        </a>
+        <nav className="legal-nav" aria-label="Legal pages">
+          <a className={route === 'privacy' ? 'active' : ''} href="/privacy">Privacy</a>
+          <a className={route === 'terms' ? 'active' : ''} href="/terms">Terms</a>
+          <a className={route === 'contact' ? 'active' : ''} href="/contact">Contact</a>
+        </nav>
+      </header>
+
+      <section className="legal-hero">
+        <span className="eyebrow">{document.eyebrow}</span>
+        <h1>{document.title}</h1>
+        <p>{document.intro}</p>
+        <small>{document.updated}</small>
+      </section>
+
+      <section className="legal-content">
+        {document.sections.map((section) => (
+          <article className="legal-section" key={section.title}>
+            <h2>{section.title}</h2>
+            <ul>
+              {section.items.map((item) => (
+                <li key={item}>{formatLegalItem(item)}</li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </section>
+    </main>
+  );
+}
+
+function formatLegalItem(item) {
+  if (item.startsWith('Email: ')) {
+    const email = item.replace('Email: ', '');
+    return (
+      <>
+        Email: <a href={`mailto:${email}`}>{email}</a>
+      </>
+    );
+  }
+
+  if (item.startsWith('GitHub: ')) {
+    const url = item.replace('GitHub: ', '');
+    return (
+      <>
+        GitHub: <a href={url} rel="noreferrer" target="_blank">{url}</a>
+      </>
+    );
+  }
+
+  if (item.startsWith('Repository: https://')) {
+    const url = item.replace('Repository: ', '');
+    return (
+      <>
+        Repository: <a href={url} rel="noreferrer" target="_blank">{url}</a>
+      </>
+    );
+  }
+
+  return item;
+}
+
+function MarketplaceApp() {
   const [language, setLanguage] = useState(getInitialLanguage);
   const [user, setUser] = useState(null);
   const [activeView, setActiveView] = useState('home');
@@ -2747,6 +2970,20 @@ function formatDateTimeLabel(value) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function getLegalRoute() {
+  if (typeof window === 'undefined') return '';
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  const routes = {
+    '/privacy': 'privacy',
+    '/privacy-policy': 'privacy',
+    '/terms': 'terms',
+    '/terms-of-service': 'terms',
+    '/contact': 'contact',
+  };
+
+  return routes[pathname.toLowerCase()] || '';
 }
 
 function getInitialServiceSlugFromUrl() {
