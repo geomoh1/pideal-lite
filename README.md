@@ -22,6 +22,20 @@ PiDeal Lite is a mobile-first React marketplace for Pi Browser where Pi Network 
 - Profile page with mode switcher and simple stats
 - Simple admin moderation for services, orders, and reports
 
+## Architecture
+
+PiDeal Lite keeps public discovery, authenticated marketplace actions, and payment verification separate:
+
+```text
+React/Vite frontend
+  -> Express backend API
+  -> PostgreSQL with Prisma
+  -> Pi SDK in Pi Browser
+  -> Pi Platform API for server-side payment approval/completion
+```
+
+The React app owns the mobile marketplace experience. The Express backend owns persistence, Pi token verification, payment approval/completion, escrow state, admin moderation, order ownership checks, public service pages, and notification computation.
+
 ## MVP flows
 
 Browse mode:
@@ -309,6 +323,27 @@ npm run test:backend
 
 The smoke test uses mock Pi payments and verifies the API-driven flow: reject external contact text, create service, approve listing, verify seller, create order with request metadata, require seller acceptance before deposit, approve/complete deposit payment, start work, deliver, reject completion while a balance is due, approve/complete remaining balance payment, review, report, resolve report, refund a disputed order, and reload persisted order state.
 
+## Security model
+
+- Pi access tokens are verified server-side through the official Pi API before a local session is created.
+- Production sessions use signed httpOnly cookies. Set a stable `SESSION_SECRET` in production.
+- Sensitive order actions require authenticated ownership checks.
+- The production backend does not trust client-supplied `buyerId`, `sellerId`, or `reporterId` values.
+- Normal users can only list orders connected to their own buyer or seller identity.
+- Admin endpoints require `User.role = "admin"` from the backend database.
+- Payment approval, completion, and incomplete-payment recovery require the authenticated buyer for that order.
+- Manual seller payouts require a public payout wallet address and an admin-recorded transaction id.
+- PiDeal never requests wallet passphrases, seed phrases, private keys, or private wallet secrets.
+
+## Current MVP limitations
+
+- Binary file uploads are not implemented yet. The MVP records request and delivery file metadata only.
+- Seller payouts are currently manual admin-verified transfers from the app wallet.
+- Automated Pi App-to-User payouts are not enabled.
+- Public service pages are lightweight backend-rendered pages intended mainly for sharing, discovery, and Open Graph previews.
+- Rate limiting is implemented in-process for the MVP. A shared external limiter is recommended for multi-instance production deployments.
+- The smoke test requires a PostgreSQL `DATABASE_URL`; it does not run against SQLite.
+
 ## Deployment notes
 
 Frontend on Vercel or Netlify:
@@ -376,3 +411,7 @@ npm run test:backend
 npm run build
 npm start
 ```
+
+## License
+
+This project is released under the MIT License. See [LICENSE](./LICENSE).
