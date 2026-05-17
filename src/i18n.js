@@ -167,8 +167,15 @@ const ar = {
   'Revision policy:': 'سياسة التعديلات:',
   'Revision policy not provided.': 'لم يتم تحديد سياسة التعديلات.',
   'Request service': 'طلب الخدمة',
+  'Fill request details first': 'املأ تفاصيل الطلب أولًا',
+  'Tell the seller exactly what you need before sending the order request.':
+    'أخبر البائع بوضوح بما تحتاجه قبل إرسال طلب الخدمة.',
+  Required: 'مطلوب',
+  Optional: 'اختياري',
   Report: 'بلاغ',
   Brief: 'التفاصيل',
+  'Add a brief before requesting this service.': 'أضف تفاصيل الطلب قبل طلب هذه الخدمة.',
+  'Write a short brief to unlock the request button.': 'اكتب تفاصيل قصيرة لتفعيل زر الطلب.',
   'Describe what the seller should create or edit': 'اشرح ما تريد من البائع إنشاءه أو تعديله',
   'Source text': 'النص الأصلي',
   'Paste text for translation, CV edits, prompts, or copy work':

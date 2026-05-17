@@ -502,6 +502,12 @@ function App() {
   }
 
   async function handleRequestService(service) {
+    if (!requestNote.trim()) {
+      setFlowError('Add a brief before requesting this service.');
+      setFlowNotice('');
+      return;
+    }
+
     if (!isPiBrowserRuntime()) {
       setPiBrowserGateService(service);
       setFlowError('');
@@ -1377,6 +1383,7 @@ function DetailView({
   const canConfirm = activeOrder?.status === ORDER_STATUS.DELIVERED;
   const isOwnListing = user?.uid === service.sellerId;
   const isBlockedSeller = service.sellerStatus === 'blocked';
+  const requestBriefReady = requestNote.trim().length > 0;
 
   return (
     <Localized>
@@ -1441,9 +1448,12 @@ function DetailView({
         </div>
       </article>
 
-      <section className="action-panel">
+      <section className="action-panel request-panel">
         <div className="section-heading tight">
-          <h2>Request service</h2>
+          <div>
+            <h2>Request service</h2>
+            <span className="request-step-pill">Fill request details first</span>
+          </div>
           <button className="ghost-button small" onClick={() => onReportService(service)}>
             <Flag size={16} />
             Report
@@ -1466,17 +1476,29 @@ function DetailView({
 
         {!activeOrder && !isOwnListing && !isBlockedSeller && (
           <div className="request-materials">
+            <div className="request-callout">
+              <BriefcaseBusiness size={18} />
+              <span>Tell the seller exactly what you need before sending the order request.</span>
+            </div>
             <label>
-              Brief
+              <span className="field-label-row">
+                <span>Brief</span>
+                <em>Required</em>
+              </span>
               <textarea
+                className={requestBriefReady ? '' : 'field-attention'}
                 value={requestNote}
                 onChange={(event) => setRequestNote(event.target.value)}
                 placeholder="Describe what the seller should create or edit"
                 rows={4}
+                required
               />
             </label>
             <label>
-              Source text
+              <span className="field-label-row">
+                <span>Source text</span>
+                <em>Optional</em>
+              </span>
               <textarea
                 value={requestAsset.sourceText}
                 onChange={(event) => updateRequestAsset('sourceText', event.target.value)}
@@ -1485,7 +1507,10 @@ function DetailView({
               />
             </label>
             <label>
-              Reference link
+              <span className="field-label-row">
+                <span>Reference link</span>
+                <em>Optional</em>
+              </span>
               <input
                 type="url"
                 value={requestAsset.referenceLink}
@@ -1495,7 +1520,10 @@ function DetailView({
             </label>
             <p className="field-hint">Use HTTPS links from Drive, Docs, Dropbox, GitHub, Figma, Canva, Notion, or trusted file storage. Messaging, social, payment, and short links are not accepted.</p>
             <label className="file-field">
-              Reference file
+              <span className="field-label-row">
+                <span>Reference file</span>
+                <em>Optional</em>
+              </span>
               <input
                 type="file"
                 onChange={(event) => updateRequestAsset(filePatchFromInput(event))}
@@ -1503,13 +1531,16 @@ function DetailView({
               <span>
                 {requestAsset.fileName
                   ? `${requestAsset.fileName} ${requestAsset.fileSize ? `(${requestAsset.fileSize})` : ''}`
-                  : 'No file selected'}
+                : 'No file selected'}
               </span>
             </label>
-            <button className="primary-button" onClick={() => onRequest(service)}>
+            <button className="primary-button" onClick={() => onRequest(service)} disabled={!requestBriefReady}>
               <WalletCards size={19} />
               {user ? 'Request service' : 'Pi Login to order'}
             </button>
+            {!requestBriefReady && (
+              <p className="request-required-note">Write a short brief to unlock the request button.</p>
+            )}
           </div>
         )}
 
