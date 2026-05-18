@@ -104,6 +104,20 @@ try {
       role: 'user',
     },
   });
+  await prisma.user.upsert({
+    where: { id: 'blocked-seller' },
+    update: {
+      username: 'blocked.seller',
+      role: 'user',
+      sellerStatus: 'blocked',
+    },
+    create: {
+      id: 'blocked-seller',
+      username: 'blocked.seller',
+      role: 'user',
+      sellerStatus: 'blocked',
+    },
+  });
 
   const health = await waitForHealth();
   assertEqual(health.platformFeePercent, '3%', 'Backend must read PLATFORM_FEE_RATE from the environment.');
@@ -371,6 +385,84 @@ try {
     { actorUserId: 'smoke-buyer' },
   );
   assertEqual(rejectedBuyerAccept.status, 403, 'Only the seller can accept a requested order.');
+
+  const blockedAcceptOrderId = `smoke-blocked-accept-${startedAt}`;
+  const blockedStartOrderId = `smoke-blocked-start-${startedAt}`;
+  const blockedDeliverOrderId = `smoke-blocked-deliver-${startedAt}`;
+  const blockedDisputeOrderId = `smoke-blocked-dispute-${startedAt}`;
+  await prisma.order.createMany({
+    data: [
+      {
+        id: blockedAcceptOrderId,
+        buyerId: 'smoke-buyer',
+        sellerId: 'blocked-seller',
+        buyerName: 'smoke.buyer',
+        sellerName: 'blocked.seller',
+        status: 'Requested',
+      },
+      {
+        id: blockedStartOrderId,
+        buyerId: 'smoke-buyer',
+        sellerId: 'blocked-seller',
+        buyerName: 'smoke.buyer',
+        sellerName: 'blocked.seller',
+        status: 'Deposit Paid',
+        amountPi: 4,
+        escrowStatus: 'holding_deposit',
+        escrowHeldPi: 4,
+      },
+      {
+        id: blockedDeliverOrderId,
+        buyerId: 'smoke-buyer',
+        sellerId: 'blocked-seller',
+        buyerName: 'smoke.buyer',
+        sellerName: 'blocked.seller',
+        status: 'In Progress',
+        amountPi: 4,
+        escrowStatus: 'holding_deposit',
+        escrowHeldPi: 4,
+      },
+      {
+        id: blockedDisputeOrderId,
+        buyerId: 'smoke-buyer',
+        sellerId: 'blocked-seller',
+        buyerName: 'smoke.buyer',
+        sellerName: 'blocked.seller',
+        status: 'Delivered',
+        amountPi: 4,
+        escrowStatus: 'holding_deposit',
+        escrowHeldPi: 4,
+      },
+    ],
+  });
+  const rejectedBlockedAccept = await postJsonExpectFailure(
+    `/api/orders/${blockedAcceptOrderId}/accept`,
+    {},
+    { actorUserId: 'blocked-seller' },
+  );
+  assertEqual(rejectedBlockedAccept.status, 403, 'Blocked sellers must not accept active orders.');
+  const rejectedBlockedStart = await postJsonExpectFailure(
+    `/api/orders/${blockedStartOrderId}/start`,
+    {},
+    { actorUserId: 'blocked-seller' },
+  );
+  assertEqual(rejectedBlockedStart.status, 403, 'Blocked sellers must not start active orders.');
+  const rejectedBlockedDeliver = await postJsonExpectFailure(
+    `/api/orders/${blockedDeliverOrderId}/deliver`,
+    { deliveryMessage: 'Blocked seller delivery attempt.' },
+    { actorUserId: 'blocked-seller' },
+  );
+  assertEqual(rejectedBlockedDeliver.status, 403, 'Blocked sellers must not deliver active orders.');
+  const buyerDisputeAgainstBlockedSeller = await postJson(
+    `/api/orders/${blockedDisputeOrderId}/dispute`,
+    {},
+    { actorUserId: 'smoke-buyer' },
+  );
+  assertEqual(
+    buyerDisputeAgainstBlockedSeller.order.status,
+    'Disputed',
+    'Buyer dispute actions must stay available when a seller is blocked.',
+  );
 
   const acceptedOrder = await postJson(`/api/orders/${orderId}/accept`, {}, { actorUserId: 'smoke-seller' });
   assertEqual(acceptedOrder.order.status, 'Pending Payment', 'Accepted requests must wait for the buyer deposit.');

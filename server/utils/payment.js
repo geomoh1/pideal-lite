@@ -205,6 +205,7 @@ export function serializeOrder(order, viewer = null) {
     buyerName: order.buyerName,
     sellerId: order.sellerId,
     sellerName: order.sellerName,
+    sellerStatus: order.seller?.sellerStatus || '',
     status: order.status,
     paymentMode: order.paymentMode || (latestCompletedPayment ? normalizePaymentMode(latestCompletedPayment.mode) : null),
     amountPi: order.amountPi,

@@ -734,6 +734,9 @@ app.post('/api/orders', orderRateLimit, requireAuth, async (request, response, n
 app.post('/api/orders/:orderId/accept', orderRateLimit, requireOrderSeller, async (request, response, next) => {
   try {
     const order = request.order;
+    if (isOrderSellerBlocked(order)) {
+      return response.status(403).json({ ok: false, error: getBlockedSellerOrderError() });
+    }
     if (order.status !== ORDER_STATUS.REQUESTED) {
       return response.status(409).json({ ok: false, error: 'Only requested orders can be accepted by the seller.' });
     }
@@ -753,6 +756,9 @@ app.post('/api/orders/:orderId/accept', orderRateLimit, requireOrderSeller, asyn
 app.post('/api/orders/:orderId/start', orderRateLimit, requireOrderSeller, async (request, response, next) => {
   try {
     const order = request.order;
+    if (isOrderSellerBlocked(order)) {
+      return response.status(403).json({ ok: false, error: getBlockedSellerOrderError() });
+    }
     if (![ORDER_STATUS.DEPOSIT_PAID, ORDER_STATUS.PAID].includes(order.status)) {
       return response.status(409).json({ ok: false, error: 'Only deposit-paid orders can move to In Progress.' });
     }
@@ -772,6 +778,9 @@ app.post('/api/orders/:orderId/start', orderRateLimit, requireOrderSeller, async
 app.post('/api/orders/:orderId/deliver', orderRateLimit, requireOrderSeller, async (request, response, next) => {
   try {
     const order = request.order;
+    if (isOrderSellerBlocked(order)) {
+      return response.status(403).json({ ok: false, error: getBlockedSellerOrderError() });
+    }
     if (order.status !== ORDER_STATUS.IN_PROGRESS) {
       return response.status(409).json({ ok: false, error: 'Only orders in progress can be delivered.' });
     }
@@ -2322,6 +2331,14 @@ function assertOrderBuyer(order, user, message) {
   if (getOrderRole(order, user) !== 'buyer') {
     forbidden(message || 'Only the buyer can perform this order action.');
   }
+}
+
+function isOrderSellerBlocked(order) {
+  return order?.seller?.sellerStatus === 'blocked';
+}
+
+function getBlockedSellerOrderError() {
+  return 'Seller is blocked. Admin review is required before this order can continue.';
 }
 
 function getOrderRole(order, user) {

@@ -2878,11 +2878,14 @@ function AdminView({
         <div className="list-panel">
           {orders.map((order) => {
             const service = services.find((item) => item.id === order.serviceId);
+            const isOpenSellerOrder = ![ORDER_STATUS.COMPLETED, ORDER_STATUS.CANCELLED, ORDER_STATUS.REFUNDED].includes(order.status);
+            const isSellerBlocked = isOpenSellerOrder && (order.sellerStatus === 'blocked' || service?.sellerStatus === 'blocked');
             return (
               <article className="order-card" key={order.id}>
                 <div className="order-title static">
                   <span>{service?.title ?? 'Removed service'}</span>
                   <StatusBadge status={order.status} />
+                  {isSellerBlocked && <span className="status risk">Seller blocked</span>}
                 </div>
                 <p>Buyer: {order.buyerName} · Seller: {order.sellerName}</p>
                 <div className="order-meta-grid">
