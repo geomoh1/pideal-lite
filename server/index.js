@@ -243,6 +243,12 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '256kb' }));
 app.use(allowLocalDevCors);
 
+app.get('/validation-key.txt', (request, response) => {
+  return response
+    .type('text/plain')
+    .send('682b3ce816c87f7b9c65f0beb0746692c02f7b35bf1db6f0c771caa33853448ffc67584613c7d827d75e943ba060dd9820160e671150dd4fb9b443da347d2870');
+});
+
 app.get('/api/health', async (request, response, next) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
