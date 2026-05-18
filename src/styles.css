@@ -666,6 +666,14 @@ select:focus-visible {
   box-shadow: none;
 }
 
+.secondary-button:disabled,
+.ghost-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+  transform: none;
+  box-shadow: none;
+}
+
 .primary-button.compact {
   width: auto;
   min-width: 120px;
@@ -684,6 +692,7 @@ select:focus-visible {
 
 .ghost-button {
   padding: 0 12px;
+  border: 1px solid transparent;
   color: var(--muted);
   background: transparent;
 }
@@ -1596,6 +1605,29 @@ textarea {
 
 .ghost-button.danger {
   color: var(--red);
+}
+
+.secondary-button.confirming,
+.ghost-button.confirming {
+  border-color: rgba(45, 143, 111, 0.45);
+  color: #185540;
+  background: #eef9f4;
+}
+
+.ghost-button.danger.confirming {
+  border-color: rgba(184, 70, 70, 0.38);
+  color: #8c2424;
+  background: #fff1f1;
+}
+
+.moderation-action-groups {
+  display: grid;
+  gap: 8px;
+}
+
+.seller-actions {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
 }
 
 .admin-service-title {

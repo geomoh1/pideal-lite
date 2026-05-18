@@ -2774,6 +2774,7 @@ function AdminView({
 }) {
   const [payoutTxids, setPayoutTxids] = useState({});
   const [refundTxids, setRefundTxids] = useState({});
+  const [pendingServiceAction, setPendingServiceAction] = useState('');
   const pendingCount = services.filter((service) => service.status === 'pending').length;
   const openReports = reports.filter((report) => report.status === 'open');
   const payoutOrders = orders.filter((order) => order.sellerPayoutStatus);
@@ -2803,6 +2804,16 @@ function AdminView({
     if (!refundTxid) return;
     await markBuyerRefundPaid(order.buyerRefundId, refundTxid);
     setRefundTxids((current) => ({ ...current, [order.buyerRefundId]: '' }));
+  }
+
+  async function confirmServiceAction(actionKey, action) {
+    if (pendingServiceAction !== actionKey) {
+      setPendingServiceAction(actionKey);
+      return;
+    }
+
+    await action();
+    setPendingServiceAction('');
   }
 
   return (
@@ -2848,26 +2859,66 @@ function AdminView({
               </button>
               <p>{service.summary}</p>
               <p className="muted-line">Seller status: {formatSellerStatus(service.sellerStatus)}</p>
-              <div className="moderation-actions">
-                <button className="secondary-button small" onClick={() => moderateService(service.id, 'approved')}>
-                  Approve
-                </button>
-                <button className="ghost-button small" onClick={() => moderateService(service.id, 'rejected')}>
-                  Reject
-                </button>
-                <button className="ghost-button small danger" onClick={() => moderateService(service.id, 'blocked')}>
-                  <Ban size={15} />
-                  Block
-                </button>
-                <button className="ghost-button small danger" onClick={() => removeService(service.id)}>
-                  Remove
-                </button>
-                <button className="ghost-button small" onClick={() => updateSellerStatus(service.sellerId, 'verified')}>
-                  Verify seller
-                </button>
-                <button className="ghost-button small danger" onClick={() => updateSellerStatus(service.sellerId, 'blocked')}>
-                  Block seller
-                </button>
+              <div className="moderation-action-groups">
+                <div className="moderation-actions">
+                  <SafeAdminButton
+                    actionKey={`${service.id}:approve`}
+                    pendingKey={pendingServiceAction}
+                    className="secondary-button small"
+                    label="Approve"
+                    confirmLabel="Confirm approval"
+                    disabled={service.status === 'approved'}
+                    onAction={() => confirmServiceAction(`${service.id}:approve`, () => moderateService(service.id, 'approved'))}
+                  />
+                  <SafeAdminButton
+                    actionKey={`${service.id}:reject`}
+                    pendingKey={pendingServiceAction}
+                    className="ghost-button small"
+                    label="Reject"
+                    confirmLabel="Confirm rejection"
+                    disabled={service.status === 'rejected'}
+                    onAction={() => confirmServiceAction(`${service.id}:reject`, () => moderateService(service.id, 'rejected'))}
+                  />
+                  <SafeAdminButton
+                    actionKey={`${service.id}:block-service`}
+                    pendingKey={pendingServiceAction}
+                    className="ghost-button small danger"
+                    label="Block"
+                    confirmLabel="Confirm block"
+                    disabled={service.status === 'blocked'}
+                    icon={<Ban size={15} />}
+                    onAction={() => confirmServiceAction(`${service.id}:block-service`, () => moderateService(service.id, 'blocked'))}
+                  />
+                  <SafeAdminButton
+                    actionKey={`${service.id}:remove`}
+                    pendingKey={pendingServiceAction}
+                    className="ghost-button small danger"
+                    label="Remove"
+                    confirmLabel="Confirm remove"
+                    disabled={service.status === 'removed'}
+                    onAction={() => confirmServiceAction(`${service.id}:remove`, () => removeService(service.id))}
+                  />
+                </div>
+                <div className="moderation-actions seller-actions">
+                  <SafeAdminButton
+                    actionKey={`${service.sellerId}:verify-seller`}
+                    pendingKey={pendingServiceAction}
+                    className="ghost-button small"
+                    label="Verify seller"
+                    confirmLabel="Confirm verify"
+                    disabled={service.sellerStatus === 'verified'}
+                    onAction={() => confirmServiceAction(`${service.sellerId}:verify-seller`, () => updateSellerStatus(service.sellerId, 'verified'))}
+                  />
+                  <SafeAdminButton
+                    actionKey={`${service.sellerId}:block-seller`}
+                    pendingKey={pendingServiceAction}
+                    className="ghost-button small danger"
+                    label="Block seller"
+                    confirmLabel="Confirm seller block"
+                    disabled={service.sellerStatus === 'blocked'}
+                    onAction={() => confirmServiceAction(`${service.sellerId}:block-seller`, () => updateSellerStatus(service.sellerId, 'blocked'))}
+                  />
+                </div>
               </div>
             </article>
           ))}
@@ -3070,6 +3121,34 @@ function AdminView({
         </div>
       )}
     </section>
+    </Localized>
+  );
+}
+
+function SafeAdminButton({
+  actionKey,
+  pendingKey,
+  className,
+  label,
+  confirmLabel,
+  disabled,
+  icon,
+  onAction,
+}) {
+  const isConfirming = pendingKey === actionKey;
+
+  return (
+    <Localized>
+    <button
+      type="button"
+      className={`${className}${isConfirming ? ' confirming' : ''}`}
+      onClick={onAction}
+      disabled={disabled}
+      aria-pressed={isConfirming}
+    >
+      {icon}
+      {isConfirming ? confirmLabel : label}
+    </button>
     </Localized>
   );
 }
