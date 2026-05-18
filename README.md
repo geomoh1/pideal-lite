@@ -102,15 +102,22 @@ Delivered -> Disputed -> Refunded
 Delivered -> Disputed -> Completed
 ```
 
-`Deposit Paid` means the backend completed the deposit payment and holds it in escrow. `Completed` means the full service price has been paid through completed backend payments and the dispute window has started. `Released` means the escrow is settled, not paid out. Seller payouts remain `manual_required` until an admin sends Pi manually from the app wallet and records the payout transaction id; only then does the payout become `paid`.
+`Deposit Paid` means the backend completed the deposit payment and holds it in escrow. `Completed` means the full service price has been paid through completed backend payments and the dispute window has started. `Released` means the escrow is settled, not paid out. Seller payouts remain `manual_required` until an admin sends Pi manually from the app wallet and records the payout transaction id; only then does the payout become `paid`. Buyer refunds follow the same rule: `Refunded` is the internal escrow decision, while a `BuyerRefund` becomes `paid` only after an admin records the manual refund transaction id.
 
-Sellers must add a public Pi payout wallet address in Profile before manual payouts can be completed cleanly. PiDeal stores only the public receiving address and never asks for, stores, or needs a wallet passphrase, private key, or seed phrase.
+Users can add a public Pi wallet address in Profile for seller payouts or buyer refunds. PiDeal stores only the public receiving address and never asks for, stores, or needs a wallet passphrase, private key, or seed phrase.
 
 Manual payout flow:
 
 ```text
 Completed -> dispute window ends -> escrow settled -> SellerPayout manual_required
 Admin sends Pi manually -> admin records txid -> SellerPayout paid
+```
+
+Manual refund flow:
+
+```text
+Disputed -> admin refunds buyer -> BuyerRefund manual_required
+Admin sends Pi manually -> admin records txid -> BuyerRefund paid
 ```
 
 ## User model
@@ -188,6 +195,8 @@ POST /api/orders/:orderId/release
 POST /api/escrow/release-due
 GET  /api/seller-payouts
 POST /api/seller-payouts/:payoutId/mark-paid
+GET  /api/buyer-refunds
+POST /api/buyer-refunds/:refundId/mark-paid
 GET  /api/orders/:orderId/status
 
 POST /api/session
@@ -332,13 +341,13 @@ The smoke test uses mock Pi payments and verifies the API-driven flow: reject ex
 - Normal users can only list orders connected to their own buyer or seller identity.
 - Admin endpoints require `User.role = "admin"` from the backend database.
 - Payment approval, completion, and incomplete-payment recovery require the authenticated buyer for that order.
-- Manual seller payouts require a public payout wallet address and an admin-recorded transaction id.
+- Manual seller payouts and buyer refunds require a public receiving wallet address and an admin-recorded transaction id.
 - PiDeal never requests wallet passphrases, seed phrases, private keys, or private wallet secrets.
 
 ## Current MVP limitations
 
 - Binary file uploads are not implemented yet. The MVP records request and delivery file metadata only.
-- Seller payouts are currently manual admin-verified transfers from the app wallet.
+- Seller payouts and buyer refunds are currently manual admin-verified transfers from the app wallet.
 - Automated Pi App-to-User payouts are not enabled.
 - Public service pages are lightweight backend-rendered pages intended mainly for sharing, discovery, and Open Graph previews.
 - Rate limiting is implemented in-process for the MVP. A shared external limiter is recommended for multi-instance production deployments.

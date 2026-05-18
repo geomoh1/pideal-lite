@@ -187,9 +187,15 @@ export function serializeOrder(order, viewer = null) {
   const canViewDeliveryAssets = isAdminViewer || isSellerViewer || (isBuyerViewer && remainingPi === 0);
   const canPayRemaining = isBuyerViewer && order.status === 'Delivered' && remainingPi > 0;
   const sellerPayoutRecord = order.sellerPayout || null;
+  const buyerRefundRecord = order.buyerRefund || null;
+  const refundedPi = Number(order.refundedPi || 0);
   const sellerPayoutStatus =
     sellerPayoutRecord?.payoutStatus ||
     (escrowStatus === 'released' && sellerPayoutPi > 0 ? 'manual_required' : '');
+  const buyerRefundStatus =
+    buyerRefundRecord?.refundStatus ||
+    (escrowStatus === 'refunded' && refundedPi > 0 ? (order.refundTxid ? 'paid' : 'manual_required') : '');
+  const canViewBuyerRefundDetails = isAdminViewer || isBuyerViewer;
 
   return {
     id: order.id,
@@ -211,7 +217,7 @@ export function serializeOrder(order, viewer = null) {
     escrowHeldPi: Number(escrowHeldPi.toFixed(2)),
     escrowFeePi: Number(escrowFeePi.toFixed(2)),
     sellerPayoutPi: Number(Math.max(sellerPayoutPi, 0).toFixed(2)),
-    refundedPi: Number(order.refundedPi || 0),
+    refundedPi,
     escrowFundedAt: formatDateTime(order.escrowFundedAt),
     disputeOpenedAt: formatDateTime(order.disputeOpenedAt),
     disputeResolvedAt: formatDateTime(order.disputeResolvedAt),
@@ -226,7 +232,14 @@ export function serializeOrder(order, viewer = null) {
     sellerPayoutPaidByAdmin: sellerPayoutRecord?.paidByAdmin || '',
     sellerWalletAddress: isAdminViewer || isSellerViewer ? order.seller?.piWalletAddress || '' : '',
     sellerWalletVerifiedAt: isAdminViewer || isSellerViewer ? formatDateTime(order.seller?.piWalletVerifiedAt) : '',
-    refundTxid: order.refundTxid || '',
+    buyerRefundId: canViewBuyerRefundDetails ? buyerRefundRecord?.id || '' : '',
+    buyerRefundStatus: canViewBuyerRefundDetails ? buyerRefundStatus : '',
+    buyerRefundTxid: canViewBuyerRefundDetails ? buyerRefundRecord?.refundTxid || order.refundTxid || '' : '',
+    buyerRefundPaidAt: canViewBuyerRefundDetails ? formatDateTime(buyerRefundRecord?.paidAt) : null,
+    buyerRefundPaidByAdmin: isAdminViewer ? buyerRefundRecord?.paidByAdmin || '' : '',
+    buyerWalletAddress: canViewBuyerRefundDetails ? order.buyer?.piWalletAddress || '' : '',
+    buyerWalletVerifiedAt: canViewBuyerRefundDetails ? formatDateTime(order.buyer?.piWalletVerifiedAt) : '',
+    refundTxid: canViewBuyerRefundDetails ? buyerRefundRecord?.refundTxid || order.refundTxid || '' : '',
     paidAt: order.paidAt,
     buyerNote: order.buyerNote || '',
     requestSourceText: order.requestSourceText || '',

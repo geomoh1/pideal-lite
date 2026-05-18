@@ -20,6 +20,7 @@ model User {
   buyerOrders     Order[]   @relation("OrderBuyer")
   sellerOrders    Order[]   @relation("OrderSeller")
   sellerPayouts   SellerPayout[]
+  buyerRefunds    BuyerRefund[]
   reviewsGiven    Review[]  @relation("ReviewBuyer")
   reviewsReceived Review[]  @relation("ReviewSeller")
   reports         Report[]
@@ -103,6 +104,7 @@ model Order {
   review               Review?
   escrowEvents         EscrowEvent[]
   sellerPayout         SellerPayout?
+  buyerRefund          BuyerRefund?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -168,6 +170,25 @@ model SellerPayout {
 
   @@index([sellerId])
   @@index([payoutStatus])
+  @@index([createdAt])
+}
+
+model BuyerRefund {
+  id           String    @id @default(cuid())
+  orderId      String    @unique
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  buyerId      String
+  buyer        User      @relation(fields: [buyerId], references: [id])
+  amountPi     Float
+  refundStatus String    @default("manual_required")
+  refundTxid   String?
+  paidAt       DateTime?
+  paidByAdmin  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([buyerId])
+  @@index([refundStatus])
   @@index([createdAt])
 }
 

@@ -46,6 +46,7 @@ import {
   fetchNotifications as fetchNotificationsApi,
   fetchCurrentSession,
   fetchMarketplaceData,
+  markBuyerRefundPaid as markBuyerRefundPaidApi,
   markSellerPayoutPaid as markSellerPayoutPaidApi,
   removeServiceById,
   refundOrder as refundOrderApi,
@@ -754,6 +755,8 @@ function MarketplaceApp() {
         setAdminTab('orders');
       } else if (notification.targetId === 'payouts') {
         setAdminTab('payouts');
+      } else if (notification.targetId === 'refunds') {
+        setAdminTab('refunds');
       } else {
         setAdminTab('services');
       }
@@ -1262,7 +1265,7 @@ function MarketplaceApp() {
   async function refundOrder(orderId) {
     try {
       const updatedOrder = await refundOrderApi(orderId, user);
-      setFlowNotice('Dispute resolved: buyer refund recorded.');
+      setFlowNotice('Dispute resolved: buyer refund recorded. Manual refund required.');
       setFlowError('');
       replaceOrder(updatedOrder);
       void refreshNotifications(user);
@@ -1308,6 +1311,20 @@ function MarketplaceApp() {
       void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Seller payout could not be marked completed.'));
+      setFlowNotice('');
+    }
+  }
+
+  async function markBuyerRefundPaid(refundId, refundTxid) {
+    try {
+      const result = await markBuyerRefundPaidApi(refundId, refundTxid, user);
+      if (result.order) replaceOrder(result.order);
+      setFlowNotice('Buyer refund marked completed.');
+      setFlowError('');
+      await refreshAppData({ actor: user, showRefreshIndicator: true });
+      void refreshNotifications(user);
+    } catch (error) {
+      setFlowError(getErrorMessage(error, 'Buyer refund could not be marked completed.'));
       setFlowNotice('');
     }
   }
@@ -1476,6 +1493,7 @@ function MarketplaceApp() {
               releaseOrder={releaseOrder}
               releaseDueEscrows={releaseDueEscrows}
               markSellerPayoutPaid={markSellerPayoutPaid}
+              markBuyerRefundPaid={markBuyerRefundPaid}
               openService={openService}
             />
           ) : (
@@ -2667,7 +2685,7 @@ function ProfileView({
       {user && (
         <section className="list-panel">
           <div className="section-heading tight">
-            <h2>Payout wallet address</h2>
+            <h2>Payout / refund wallet address</h2>
             {user.piWalletAddress && <span className="count-pill">saved</span>}
           </div>
           <div className="request-materials">
@@ -2682,13 +2700,13 @@ function ProfileView({
                 spellCheck="false"
               />
             </label>
-            <p className="field-hint">Enter your public Pi wallet address only. Never enter your passphrase, private key, or seed phrase.</p>
+            <p className="field-hint">Enter your public Pi wallet address only for seller payouts or buyer refunds. Never enter your passphrase, private key, or seed phrase.</p>
             <button
               className="secondary-button"
               onClick={onSavePayoutWallet}
               disabled={!payoutWalletDraft.trim() || payoutWalletDraft.trim() === (user.piWalletAddress || '')}
             >
-              Save payout wallet
+              Save wallet address
             </button>
           </div>
         </section>
@@ -2751,16 +2769,24 @@ function AdminView({
   releaseOrder,
   releaseDueEscrows,
   markSellerPayoutPaid,
+  markBuyerRefundPaid,
   openService,
 }) {
   const [payoutTxids, setPayoutTxids] = useState({});
+  const [refundTxids, setRefundTxids] = useState({});
   const pendingCount = services.filter((service) => service.status === 'pending').length;
   const openReports = reports.filter((report) => report.status === 'open');
   const payoutOrders = orders.filter((order) => order.sellerPayoutStatus);
   const pendingPayoutOrders = payoutOrders.filter((order) => order.sellerPayoutStatus === 'manual_required');
+  const refundOrders = orders.filter((order) => order.buyerRefundStatus);
+  const pendingRefundOrders = refundOrders.filter((order) => order.buyerRefundStatus === 'manual_required');
 
   function updatePayoutTxid(payoutId, value) {
     setPayoutTxids((current) => ({ ...current, [payoutId]: value }));
+  }
+
+  function updateRefundTxid(refundId, value) {
+    setRefundTxids((current) => ({ ...current, [refundId]: value }));
   }
 
   async function submitPayout(order) {
@@ -2769,6 +2795,14 @@ function AdminView({
     if (!payoutTxid) return;
     await markSellerPayoutPaid(order.sellerPayoutId, payoutTxid);
     setPayoutTxids((current) => ({ ...current, [order.sellerPayoutId]: '' }));
+  }
+
+  async function submitRefund(order) {
+    if (!order.buyerRefundId) return;
+    const refundTxid = String(refundTxids[order.buyerRefundId] || '').trim();
+    if (!refundTxid) return;
+    await markBuyerRefundPaid(order.buyerRefundId, refundTxid);
+    setRefundTxids((current) => ({ ...current, [order.buyerRefundId]: '' }));
   }
 
   return (
@@ -2780,7 +2814,7 @@ function AdminView({
           <h1>Moderation</h1>
         </div>
         <div className="segmented">
-          {['services', 'orders', 'payouts', 'reports'].map((tab) => (
+          {['services', 'orders', 'payouts', 'refunds', 'reports'].map((tab) => (
             <button key={tab} className={adminTab === tab ? 'active' : ''} onClick={() => setAdminTab(tab)}>
               {tab}
             </button>
@@ -2797,6 +2831,7 @@ function AdminView({
         <Metric label="Pending" value={pendingCount} />
         <Metric label="Orders" value={orders.length} />
         <Metric label="Payouts due" value={pendingPayoutOrders.length} />
+        <Metric label="Refunds due" value={pendingRefundOrders.length} />
         <Metric label="Reports" value={openReports.length} />
       </div>
 
@@ -2934,6 +2969,75 @@ function AdminView({
                     />
                   ) : (
                     <StatusHint icon={<Clock3 size={18} />} text={formatSellerPayoutStatus(order.sellerPayoutStatus)} />
+                  )}
+                </article>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {adminTab === 'refunds' && (
+        <div className="list-panel">
+          <div className="section-note">
+            <strong>Buyer refunds</strong>
+            <p>Resolve buyer-favor disputes first, send Pi manually from the app wallet, then record the refund transaction ID.</p>
+          </div>
+          {refundOrders.length === 0 ? (
+            <p className="muted-line">No buyer refunds are queued.</p>
+          ) : (
+            refundOrders.map((order) => {
+              const service = services.find((item) => item.id === order.serviceId);
+              const txidDraft = refundTxids[order.buyerRefundId] || '';
+              return (
+                <article className="order-card" key={order.buyerRefundId || order.id}>
+                  <div className="order-title static">
+                    <span>{service?.title ?? 'Removed service'}</span>
+                    <StatusBadge status={formatBuyerRefundStatus(order.buyerRefundStatus)} />
+                  </div>
+                  <p>Buyer: {order.buyerName} - Order: {order.id}</p>
+                  <div className="order-meta-grid">
+                    <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
+                    <Metric label="Refund" value={`${order.refundedPi || 0} Pi`} />
+                    <Metric label="Recorded" value={formatDateTimeLabel(order.refundRecordedAt)} />
+                    <Metric label="Escrow" value={formatEscrowStatus(order.escrowStatus)} />
+                  </div>
+                  {order.buyerWalletAddress ? (
+                    <div className="wallet-address-row">
+                      <span>
+                        <strong>Buyer refund wallet address</strong>
+                        <code>{order.buyerWalletAddress}</code>
+                      </span>
+                      <button className="ghost-button small" onClick={() => copyText(order.buyerWalletAddress)}>
+                        Copy address
+                      </button>
+                    </div>
+                  ) : (
+                    <StatusHint icon={<AlertTriangle size={18} />} text="Buyer refund wallet address is missing." />
+                  )}
+                  {order.buyerRefundStatus === 'manual_required' ? (
+                    <div className="payout-form">
+                      <input
+                        type="text"
+                        value={txidDraft}
+                        onChange={(event) => updateRefundTxid(order.buyerRefundId, event.target.value)}
+                        placeholder="Manual refund transaction ID"
+                      />
+                      <button
+                        className="secondary-button small"
+                        onClick={() => submitRefund(order)}
+                        disabled={!order.buyerRefundId || !txidDraft.trim()}
+                      >
+                        Mark refund completed
+                      </button>
+                    </div>
+                  ) : order.buyerRefundStatus === 'paid' ? (
+                    <StatusHint
+                      icon={<ShieldCheck size={18} />}
+                      text={`Refund completed. Transaction ID: ${order.buyerRefundTxid || order.refundTxid || 'recorded'}`}
+                    />
+                  ) : (
+                    <StatusHint icon={<Clock3 size={18} />} text={formatBuyerRefundStatus(order.buyerRefundStatus)} />
                   )}
                 </article>
               );
@@ -3115,9 +3219,16 @@ function getEscrowHint(order) {
   }
 
   if (order.escrowStatus === 'refunded') {
+    if (order.buyerRefundStatus === 'paid') {
+      return {
+        icon: <ShieldCheck size={18} />,
+        text: `Refund completed. Transaction ID: ${order.buyerRefundTxid || order.refundTxid || 'recorded'}`,
+      };
+    }
+
     return {
       icon: <CircleDollarSign size={18} />,
-      text: `Escrow refunded to buyer record: ${formatDateTimeLabel(order.refundRecordedAt)}`,
+      text: `Refund recorded. Manual buyer refund required: ${formatDateTimeLabel(order.refundRecordedAt)}`,
     };
   }
 
@@ -3146,6 +3257,12 @@ function formatSellerPayoutStatus(status) {
   if (status === 'paid') return 'Payout paid';
   if (status === 'manual_required') return 'Payout pending';
   return 'No payout';
+}
+
+function formatBuyerRefundStatus(status) {
+  if (status === 'paid') return 'Refund paid';
+  if (status === 'manual_required') return 'Refund pending';
+  return 'No refund';
 }
 
 function formatDateTimeLabel(value) {

@@ -11,7 +11,9 @@ const serviceId = `smoke-service-${startedAt}`;
 const depositTxid = `smoke-tx-${startedAt}-deposit`;
 const balanceTxid = `smoke-tx-${startedAt}-balance`;
 const sellerPayoutTxid = `smoke-payout-tx-${startedAt}`;
+const buyerRefundTxid = `smoke-refund-tx-${startedAt}`;
 const smokeSellerWalletAddress = `G${'A'.repeat(55)}`;
+const smokeBuyerWalletAddress = `G${'B'.repeat(55)}`;
 
 if (!/^postgres(?:ql)?:\/\//i.test(String(process.env.DATABASE_URL || ''))) {
   throw new Error('DATABASE_URL must point to PostgreSQL before running npm run test:backend.');
@@ -265,6 +267,12 @@ try {
     { actorUserId: 'smoke-seller' },
   );
   assertEqual(savedPayoutWallet.user.piWalletAddress, smokeSellerWalletAddress, 'Seller payout wallet must be normalized and saved.');
+  const savedBuyerRefundWallet = await postJson(
+    '/api/users/payout-wallet',
+    { piWalletAddress: smokeBuyerWalletAddress.toLowerCase() },
+    { actorUserId: 'smoke-buyer' },
+  );
+  assertEqual(savedBuyerRefundWallet.user.piWalletAddress, smokeBuyerWalletAddress, 'Buyer refund wallet must be normalized and saved.');
 
   const services = await getJson('/api/services');
   assertTruthy(
@@ -646,6 +654,39 @@ try {
   assertEqual(refunded.order.escrowStatus, 'refunded', 'Refund resolution must close escrow as refunded.');
   assertEqual(refunded.order.refundedPi, 4, 'Refund resolution must record the refunded held amount.');
   assertEqual(refunded.order.escrowHeldPi, 0, 'Refunded escrow must no longer hold funds.');
+  assertEqual(refunded.order.buyerRefundStatus, 'manual_required', 'Refund resolution must queue a manual buyer refund.');
+  assertTruthy(refunded.order.buyerRefundId, 'Refund resolution must expose the queued buyer refund id.');
+  assertEqual(refunded.order.buyerWalletAddress, smokeBuyerWalletAddress, 'Admin refund payload must expose the public buyer wallet address.');
+
+  const rejectedBuyerRefundList = await getJsonExpectFailure('/api/buyer-refunds');
+  assertEqual(rejectedBuyerRefundList.status, 401, 'Buyer refund queue must require an admin actor.');
+  const buyerRefundList = await getJson('/api/buyer-refunds', { actorUserId: 'admin-lina' });
+  const queuedBuyerRefund = buyerRefundList.refunds.find((refund) => refund.orderId === disputedOrderId);
+  assertTruthy(queuedBuyerRefund, 'Refunded escrow must appear in the buyer refund queue.');
+  assertEqual(queuedBuyerRefund.amountPi, 4, 'Queued buyer refund must use the held amount.');
+  assertEqual(queuedBuyerRefund.refundStatus, 'manual_required', 'Queued buyer refund must require manual verification.');
+  assertEqual(queuedBuyerRefund.buyerWalletAddress, smokeBuyerWalletAddress, 'Queued buyer refund must expose the public buyer wallet address.');
+  const rejectedEmptyRefundTxid = await postJsonExpectFailure(
+    `/api/buyer-refunds/${queuedBuyerRefund.id}/mark-paid`,
+    { refundTxid: '   ' },
+    { actorUserId: 'admin-lina' },
+  );
+  assertEqual(rejectedEmptyRefundTxid.status, 400, 'Manual buyer refund completion must reject empty txids.');
+  const paidBuyerRefund = await postJson(
+    `/api/buyer-refunds/${queuedBuyerRefund.id}/mark-paid`,
+    { refundTxid: buyerRefundTxid },
+    { actorUserId: 'admin-lina' },
+  );
+  assertEqual(paidBuyerRefund.refund.refundStatus, 'paid', 'Admin must be able to mark a manual buyer refund paid.');
+  assertEqual(paidBuyerRefund.refund.refundTxid, buyerRefundTxid, 'Paid buyer refund must store the manual transfer txid.');
+  assertEqual(paidBuyerRefund.order.buyerRefundStatus, 'paid', 'Order serialization must show the paid buyer refund status.');
+  assertEqual(paidBuyerRefund.order.buyerRefundTxid, buyerRefundTxid, 'Order serialization must expose the buyer refund txid.');
+  const rejectedDuplicateRefund = await postJsonExpectFailure(
+    `/api/buyer-refunds/${queuedBuyerRefund.id}/mark-paid`,
+    { refundTxid: `${buyerRefundTxid}-duplicate` },
+    { actorUserId: 'admin-lina' },
+  );
+  assertEqual(rejectedDuplicateRefund.status, 409, 'Manual buyer refund completion must reject duplicate paid marking.');
 
   const releasedDisputeOrderId = `smoke-dispute-release-${startedAt}`;
   await prisma.order.create({

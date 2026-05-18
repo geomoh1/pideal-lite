@@ -13,6 +13,31 @@ const RTL_LANGUAGES = new Set(['ar']);
 const TRANSLATABLE_PROPS = new Set(['alt', 'aria-label', 'label', 'message', 'placeholder', 'text', 'title']);
 
 const ar = {
+  'Pending buyer refunds': 'استردادات المشترين المعلقة',
+  'Buyer refunds': 'استردادات المشترين',
+  'Complete buyer refunds': 'أكمل استردادات المشترين',
+  'Resolve buyer-favor disputes first, send Pi manually from the app wallet, then record the refund transaction ID.':
+    'حل النزاعات لصالح المشتري أولًا، ثم أرسل Pi يدويًا من محفظة التطبيق، وبعدها سجل معرّف معاملة الاسترداد.',
+  'Refunds due': 'استردادات مستحقة',
+  'Buyer refund marked completed.': 'تم تسجيل استرداد المشتري كمكتمل.',
+  'Buyer refund could not be marked completed.': 'تعذر تسجيل استرداد المشتري كمكتمل.',
+  'Dispute resolved: buyer refund recorded. Manual refund required.':
+    'تم حل النزاع: تم تسجيل استرداد المشتري، والتحويل اليدوي مطلوب.',
+  'Refund pending': 'استرداد معلق',
+  'Refund paid': 'استرداد مدفوع',
+  'No refund': 'لا يوجد استرداد',
+  Refund: 'الاسترداد',
+  Recorded: 'تم التسجيل',
+  'Manual refund transaction ID': 'معرّف معاملة الاسترداد اليدوي',
+  'Mark refund completed': 'سجل الاسترداد كمكتمل',
+  'No buyer refunds are queued.': 'لا توجد استردادات مشترين في قائمة الانتظار.',
+  'Payout / refund wallet address': 'عنوان محفظة الاستلام / الاسترداد',
+  'Enter your public Pi wallet address only for seller payouts or buyer refunds. Never enter your passphrase, private key, or seed phrase.':
+    'أدخل عنوان محفظة Pi العام فقط لاستلام مدفوعات البائع أو استردادات المشتري. لا تدخل passphrase أو المفتاح الخاص أو seed phrase أبدًا.',
+  'Save wallet address': 'حفظ عنوان المحفظة',
+  'Buyer refund wallet address': 'عنوان محفظة استرداد المشتري',
+  'Buyer refund wallet address is missing.': 'عنوان محفظة استرداد المشتري غير موجود.',
+  refunds: 'الاستردادات',
   'Refresh PiDeal': 'تحديث PiDeal',
   'Action center': 'مركز الإجراءات',
   Loading: 'جار التحميل',
@@ -343,6 +368,18 @@ const ar = {
 };
 
 const arPatterns = [
+  {
+    pattern: /^Buyer: (.+) - Order: (.+)$/,
+    render: ([, buyer, order]) => `المشتري: ${buyer} - الطلب: ${order}`,
+  },
+  {
+    pattern: /^Refund completed\. Transaction ID: (.+)$/,
+    render: ([, txid]) => `اكتمل استرداد المشتري. معرّف المعاملة: ${txid}`,
+  },
+  {
+    pattern: /^Refund recorded\. Manual buyer refund required: (.+)$/,
+    render: ([, time]) => `تم تسجيل الاسترداد. التحويل اليدوي للمشتري مطلوب: ${time}`,
+  },
   {
     pattern: /^Signed in as (.+)\. Active mode: (.+)\.$/,
     render: ([, username, mode]) => `تم تسجيل الدخول باسم ${username}. الوضع الحالي: ${translateText(mode, 'ar')}.`,

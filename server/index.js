@@ -74,9 +74,15 @@ const ESCROW_EVENT_TYPE = {
   RELEASED: 'released',
   REFUNDED: 'refunded',
   PAYOUT_PAID: 'payout_paid',
+  REFUND_PAID: 'refund_paid',
 };
 
 const SELLER_PAYOUT_STATUS = {
+  MANUAL_REQUIRED: 'manual_required',
+  PAID: 'paid',
+};
+
+const BUYER_REFUND_STATUS = {
   MANUAL_REQUIRED: 'manual_required',
   PAID: 'paid',
 };
@@ -193,8 +199,10 @@ const ORDER_INCLUDE = {
   },
   review: true,
   service: true,
+  buyer: true,
   seller: true,
   sellerPayout: true,
+  buyerRefund: true,
   escrowEvents: {
     orderBy: { createdAt: 'desc' },
     take: 8,
@@ -212,6 +220,16 @@ const SELLER_PAYOUT_INCLUDE = {
     include: {
       service: true,
       seller: true,
+    },
+  },
+};
+
+const BUYER_REFUND_INCLUDE = {
+  buyer: true,
+  order: {
+    include: {
+      service: true,
+      buyer: true,
     },
   },
 };
@@ -317,6 +335,22 @@ app.get('/api/seller-payouts', requireAdmin, async (request, response, next) => 
   }
 });
 
+app.get('/api/buyer-refunds', requireAdmin, async (request, response, next) => {
+  try {
+    const refunds = await prisma.buyerRefund.findMany({
+      include: BUYER_REFUND_INCLUDE,
+      orderBy: [
+        { refundStatus: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    });
+
+    return response.json({ ok: true, refunds: refunds.map(serializeBuyerRefund) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.post('/api/users/payout-wallet', orderRateLimit, requireAuth, async (request, response, next) => {
   try {
     const walletAddress = normalizePiWalletAddress(request.body?.piWalletAddress);
@@ -397,6 +431,75 @@ app.post('/api/seller-payouts/:payoutId/mark-paid', requireAdmin, async (request
     return response.json({
       ok: true,
       payout: serializeSellerPayout(payout),
+      order: serializeOrder(order, request.actor),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/buyer-refunds/:refundId/mark-paid', requireAdmin, async (request, response, next) => {
+  try {
+    const refundTxid = requiredString(request.body?.refundTxid || request.body?.txid, 'refundTxid');
+    const paidAt = new Date();
+
+    const existingRefund = await prisma.buyerRefund.findUnique({
+      where: { id: request.params.refundId },
+      include: BUYER_REFUND_INCLUDE,
+    });
+
+    if (!existingRefund) {
+      return response.status(404).json({ ok: false, error: 'Buyer refund was not found.' });
+    }
+    if (existingRefund.refundStatus === BUYER_REFUND_STATUS.PAID) {
+      return response.status(409).json({ ok: false, error: 'Buyer refund is already marked paid.' });
+    }
+    if (existingRefund.refundStatus !== BUYER_REFUND_STATUS.MANUAL_REQUIRED) {
+      return response.status(409).json({ ok: false, error: 'Only manual-required buyer refunds can be marked paid.' });
+    }
+
+    const { refund, order } = await prisma.$transaction(async (tx) => {
+      const refund = await tx.buyerRefund.update({
+        where: { id: existingRefund.id },
+        data: {
+          refundStatus: BUYER_REFUND_STATUS.PAID,
+          refundTxid,
+          paidAt,
+          paidByAdmin: request.actor.id,
+        },
+        include: BUYER_REFUND_INCLUDE,
+      });
+
+      await tx.order.update({
+        where: { id: existingRefund.orderId },
+        data: {
+          refundTxid,
+        },
+      });
+
+      await tx.escrowEvent.create({
+        data: {
+          orderId: existingRefund.orderId,
+          actorId: request.actor.id,
+          type: ESCROW_EVENT_TYPE.REFUND_PAID,
+          amountPi: existingRefund.amountPi,
+          status: ESCROW_STATUS.REFUNDED,
+          txid: refundTxid,
+          note: 'Manual buyer refund completed and verified by admin.',
+        },
+      });
+
+      const order = await tx.order.findUnique({
+        where: { id: existingRefund.orderId },
+        include: ORDER_INCLUDE,
+      });
+
+      return { refund, order };
+    });
+
+    return response.json({
+      ok: true,
+      refund: serializeBuyerRefund(refund),
       order: serializeOrder(order, request.actor),
     });
   } catch (error) {
@@ -850,11 +953,14 @@ app.post('/api/orders/:orderId/refund', requireAdmin, async (request, response, 
     if (order.status !== ORDER_STATUS.DISPUTED) {
       return response.status(409).json({ ok: false, error: 'Only disputed orders can be refunded by admin.' });
     }
+    if (!order.buyerId) {
+      return response.status(409).json({ ok: false, error: 'Buyer refund requires an order buyer.' });
+    }
 
     const resolvedAt = new Date();
     const refundPi = Number((Number(order.escrowHeldPi || 0) || calculatePaidTotal(order)).toFixed(2));
     const updatedOrder = await prisma.$transaction(async (tx) => {
-      const updatedOrder = await tx.order.update({
+      await tx.order.update({
         where: { id: request.params.orderId },
         data: {
           status: ORDER_STATUS.REFUNDED,
@@ -867,7 +973,6 @@ app.post('/api/orders/:orderId/refund', requireAdmin, async (request, response, 
           disputeResolvedAt: resolvedAt,
           refundRecordedAt: resolvedAt,
         },
-        include: ORDER_INCLUDE,
       });
 
       await tx.escrowEvent.create({
@@ -877,11 +982,16 @@ app.post('/api/orders/:orderId/refund', requireAdmin, async (request, response, 
           type: ESCROW_EVENT_TYPE.REFUNDED,
           amountPi: refundPi,
           status: ESCROW_STATUS.REFUNDED,
-          note: 'Admin resolved dispute in favor of buyer. Refund is recorded for the held escrow.',
+          note: 'Admin resolved dispute in favor of buyer. Refund is recorded and queued for manual transfer.',
         },
       });
 
-      return updatedOrder;
+      await queueBuyerRefund(tx, order, refundPi, resolvedAt);
+
+      return tx.order.findUnique({
+        where: { id: request.params.orderId },
+        include: ORDER_INCLUDE,
+      });
     });
 
     return response.json({ ok: true, order: serializeOrder(updatedOrder, request.actor) });
@@ -2093,6 +2203,28 @@ async function queueSellerPayout(tx, order, releaseUpdate, now = new Date()) {
   });
 }
 
+async function queueBuyerRefund(tx, order, refundPi, now = new Date()) {
+  if (!order?.id || !order.buyerId || Number(refundPi || 0) <= 0) {
+    return null;
+  }
+
+  const existingRefund = await tx.buyerRefund.findUnique({
+    where: { orderId: order.id },
+  });
+
+  if (existingRefund) return existingRefund;
+
+  return tx.buyerRefund.create({
+    data: {
+      orderId: order.id,
+      buyerId: order.buyerId,
+      amountPi: Number(refundPi || 0),
+      refundStatus: BUYER_REFUND_STATUS.MANUAL_REQUIRED,
+      createdAt: now,
+    },
+  });
+}
+
 function getEscrowReleaseEligibleAt(now = new Date()) {
   return new Date(now.getTime() + ESCROW_DISPUTE_WINDOW_HOURS * 60 * 60 * 1000);
 }
@@ -2476,11 +2608,19 @@ async function getNotificationsForUser(user) {
 async function getAdminNotifications() {
   const notifications = [];
 
-  const [pendingServices, openReports, disputedOrders, pendingSellerPayouts, sellersAwaitingVerification] = await Promise.all([
+  const [
+    pendingServices,
+    openReports,
+    disputedOrders,
+    pendingSellerPayouts,
+    pendingBuyerRefunds,
+    sellersAwaitingVerification,
+  ] = await Promise.all([
     prisma.service.count({ where: { status: 'pending' } }),
     prisma.report.count({ where: { status: 'open' } }),
     prisma.order.count({ where: { status: ORDER_STATUS.DISPUTED } }),
     prisma.sellerPayout.count({ where: { payoutStatus: SELLER_PAYOUT_STATUS.MANUAL_REQUIRED } }),
+    prisma.buyerRefund.count({ where: { refundStatus: BUYER_REFUND_STATUS.MANUAL_REQUIRED } }),
     prisma.user.count({
       where: {
         sellerStatus: 'unverified',
@@ -2541,6 +2681,19 @@ async function getAdminNotifications() {
     }));
   }
 
+  if (pendingBuyerRefunds > 0) {
+    notifications.push(createNotification({
+      id: 'admin-pending-buyer-refunds',
+      type: 'admin_pending_buyer_refunds',
+      title: 'Pending buyer refunds',
+      message: `${pendingBuyerRefunds} buyer refund needs manual transfer verification.`,
+      targetType: 'admin',
+      targetId: 'refunds',
+      actionLabel: 'Complete buyer refunds',
+      severity: 'warning',
+    }));
+  }
+
   if (sellersAwaitingVerification > 0) {
     notifications.push(createNotification({
       id: 'admin-seller-verification',
@@ -2590,6 +2743,27 @@ function serializeSellerPayout(payout) {
     paidByAdmin: payout.paidByAdmin || '',
     releasedAt: formatDateTimeValue(payout.order?.releasedAt),
     createdAt: formatDateTimeValue(payout.createdAt),
+  };
+}
+
+function serializeBuyerRefund(refund) {
+  const buyerWalletAddress = refund.buyer?.piWalletAddress || refund.order?.buyer?.piWalletAddress || '';
+
+  return {
+    id: refund.id,
+    orderId: refund.orderId,
+    buyerId: refund.buyerId,
+    buyerName: refund.buyer?.username || refund.order?.buyerName || 'buyer',
+    buyerWalletAddress,
+    buyerWalletVerifiedAt: formatDateTimeValue(refund.buyer?.piWalletVerifiedAt || refund.order?.buyer?.piWalletVerifiedAt),
+    serviceTitle: refund.order?.service?.title || 'Order refund',
+    amountPi: Number(refund.amountPi || 0),
+    refundStatus: refund.refundStatus,
+    refundTxid: refund.refundTxid || '',
+    paidAt: formatDateTimeValue(refund.paidAt),
+    paidByAdmin: refund.paidByAdmin || '',
+    refundRecordedAt: formatDateTimeValue(refund.order?.refundRecordedAt),
+    createdAt: formatDateTimeValue(refund.createdAt),
   };
 }
 
