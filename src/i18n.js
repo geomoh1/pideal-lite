@@ -38,6 +38,9 @@ const ar = {
   'Buyer refund wallet address': 'عنوان محفظة استرداد المشتري',
   'Buyer refund wallet address is missing.': 'عنوان محفظة استرداد المشتري غير موجود.',
   refunds: 'الاستردادات',
+  'Seller blocked': 'البائع محظور',
+  'Seller is blocked. Admin review is required before this order can continue.':
+    'البائع محظور. يجب مراجعة الأدمن قبل استمرار هذا الطلب.',
   'Refresh PiDeal': 'تحديث PiDeal',
   'Action center': 'مركز الإجراءات',
   Loading: 'جار التحميل',
@@ -366,6 +369,15 @@ const ar = {
   'Small React fixes for forms, layout issues, and state bugs.':
     'إصلاحات React صغيرة للنماذج ومشاكل التخطيط وحالات الواجهة.',
 };
+
+Object.assign(ar, {
+  'Confirm approval': 'تأكيد القبول',
+  'Confirm rejection': 'تأكيد الرفض',
+  'Confirm block': 'تأكيد الحظر',
+  'Confirm remove': 'تأكيد الحذف',
+  'Confirm verify': 'تأكيد التوثيق',
+  'Confirm seller block': 'تأكيد حظر البائع',
+});
 
 const arPatterns = [
   {

@@ -821,8 +821,8 @@ function MarketplaceApp() {
     };
   }
 
-  async function getAuthenticatedPiUser() {
-    if (user) return user;
+  async function getAuthenticatedPiUser({ forcePiAuth = false } = {}) {
+    if (user && !forcePiAuth) return user;
 
     // Official Pi auth must stay inside src/piPlaceholders.js.
     try {
@@ -1001,6 +1001,11 @@ function MarketplaceApp() {
     const service = services.find((item) => item.id === order?.serviceId);
     if (!order || !service) return;
 
+    const paymentUser = await getAuthenticatedPiUser({
+      forcePiAuth: user?.authProvider !== 'pi-sdk',
+    });
+    if (!paymentUser) return;
+
     const paymentIsAllowed =
       (mode === 'deposit' && order.status === ORDER_STATUS.PENDING_PAYMENT) ||
       (mode === 'balance' && order.status === ORDER_STATUS.DELIVERED) ||
@@ -1061,7 +1066,7 @@ function MarketplaceApp() {
         item.id === orderId ? { ...paymentResult.order, payment: paymentResult.payment } : item,
       ),
     );
-    void refreshNotifications(user);
+    void refreshNotifications(paymentUser);
   }
 
   async function handleAcceptOrder(orderId) {
