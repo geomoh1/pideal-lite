@@ -2070,6 +2070,8 @@ function OrderProgress({
   const remainingPi = getRemainingPi(order, service);
   const showDeliveryBox = canConfirm || deliveryConfirmed;
   const deliveryAssetsLocked = order.deliveryAssetsLocked || (canConfirm && remainingPi > 0);
+  const disputeWindowOpen = canOpenOrderDispute(order, remainingPi);
+  const resolvedOrderHint = getResolvedOrderHint(order);
 
   return (
     <Localized>
@@ -2123,6 +2125,9 @@ function OrderProgress({
               )}
             </>
           )}
+          {resolvedOrderHint && (
+            <StatusHint icon={<ShieldCheck size={18} />} text={resolvedOrderHint} />
+          )}
           {remainingPi > 0 ? (
             <button className="secondary-button" onClick={() => onPay(order.id, 'balance')}>
               <CircleDollarSign size={18} />
@@ -2134,7 +2139,7 @@ function OrderProgress({
               Confirm delivery
             </button>
           ) : null}
-          {!deliveryAssetsLocked && (
+          {!deliveryAssetsLocked && disputeWindowOpen && (
             <DisputeAction
               orderId={order.id}
               reason={disputeReason}
@@ -2446,7 +2451,7 @@ function getOrderActionLabel(order, service, mode) {
     if (order.status === ORDER_STATUS.PENDING_PAYMENT) return 'Pay deposit';
     if (order.status === ORDER_STATUS.DELIVERED && remainingPi > 0) return 'Pay remaining';
     if (order.status === ORDER_STATUS.DELIVERED && remainingPi <= 0) return 'Review delivery';
-    if (order.status === ORDER_STATUS.COMPLETED && order.escrowStatus === 'release_pending') {
+    if (order.status === ORDER_STATUS.COMPLETED && canOpenOrderDispute(order, remainingPi)) {
       return 'Review before dispute deadline';
     }
     return '';
@@ -2469,6 +2474,32 @@ function getActionOrderMode(order, userId, service) {
 
 function uniqueOrders(orders) {
   return Array.from(new Map(orders.map((order) => [order.id, order])).values());
+}
+
+function canOpenOrderDispute(order, remainingPi = 0) {
+  if (!order || remainingPi > 0) return false;
+  if (![ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(order.status)) return false;
+  if (order.escrowStatus !== 'release_pending') return false;
+
+  if (order.releaseEligibleAt) {
+    const releaseAt = new Date(order.releaseEligibleAt).getTime();
+    if (!Number.isNaN(releaseAt) && releaseAt <= Date.now()) return false;
+  }
+
+  return true;
+}
+
+function getResolvedOrderHint(order) {
+  if (!order) return '';
+  if (order.escrowStatus === 'released') {
+    return order.sellerPayoutStatus === 'paid'
+      ? 'Order closed. Seller payout completed.'
+      : 'Order closed. Seller payout is queued for manual transfer.';
+  }
+  if (order.escrowStatus === 'refunded') {
+    return 'Order closed. Buyer refund is recorded.';
+  }
+  return '';
 }
 
 function OrdersView({
@@ -2611,6 +2642,8 @@ function OrderCard({
   const remainingPi = getRemainingPi(order, service);
   const deliveryAssetsLocked = order.deliveryAssetsLocked || (order.status === ORDER_STATUS.DELIVERED && remainingPi > 0);
   const showBuyerDelivery = mode === 'buyer' && [ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(order.status);
+  const disputeWindowOpen = canOpenOrderDispute(order, remainingPi);
+  const resolvedOrderHint = getResolvedOrderHint(order);
   const detailsId = `order-details-${order.id}`;
 
   return (
@@ -2745,6 +2778,9 @@ function OrderCard({
               )}
             </>
           )}
+          {resolvedOrderHint && (
+            <StatusHint icon={<ShieldCheck size={18} />} text={resolvedOrderHint} />
+          )}
           {remainingPi > 0 ? (
             <button className="secondary-button" onClick={() => onPay(order.id, 'balance')}>
               Pay remaining {remainingPi} Pi
@@ -2754,7 +2790,7 @@ function OrderCard({
               Confirm delivery
             </button>
           ) : null}
-          {!deliveryAssetsLocked && (
+          {!deliveryAssetsLocked && disputeWindowOpen && (
             <DisputeAction
               orderId={order.id}
               reason={disputeReason}
