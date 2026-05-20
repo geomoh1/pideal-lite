@@ -247,6 +247,8 @@ const ar = {
     'الصق نص الترجمة أو تعديل السيرة أو البرومبتات أو الكتابة',
   'Reference link': 'رابط مرجعي',
   'Reference file': 'ملف مرجعي',
+  'To send files or images, upload them to Google Drive, Dropbox, GitHub, Figma, Canva, Notion, or trusted storage, then paste the share link here. Messaging, social, payment, and short links are not accepted.':
+    'لإرسال ملفات أو صور، ارفعها على Google Drive أو Dropbox أو GitHub أو Figma أو Canva أو Notion أو خدمة تخزين موثوقة، ثم ضع رابط المشاركة هنا. روابط المراسلة والتواصل والدفع والروابط المختصرة غير مقبولة.',
   'No file selected': 'لم يتم اختيار ملف',
   'Pi Login to order': 'سجل دخول Pi للطلب',
   'Request sent. Waiting for the seller to accept before deposit payment.':
@@ -343,6 +345,8 @@ const ar = {
   'Describe the completed work': 'صف العمل المكتمل',
   'Delivery link': 'رابط التسليم',
   'Delivery file': 'ملف التسليم',
+  'To deliver files or images, upload them to Drive, Dropbox, GitHub/GitLab, Vercel, Netlify, Notion, or trusted storage, then paste the HTTPS delivery link here. Direct contact, external payment, and short links are blocked.':
+    'لتسليم ملفات أو صور، ارفعها على Drive أو Dropbox أو GitHub/GitLab أو Vercel أو Netlify أو Notion أو خدمة تخزين موثوقة، ثم ضع رابط التسليم HTTPS هنا. التواصل المباشر والدفع الخارجي والروابط المختصرة محظورة.',
   'Submit delivery': 'إرسال التسليم',
   'Remaining balance': 'المبلغ المتبقي',
   'Seller rating': 'تقييم البائع',

@@ -2015,22 +2015,7 @@ function DetailView({
                 placeholder="https://drive.google.com/file/d/..."
               />
             </label>
-            <p className="field-hint">Use HTTPS links from Drive, Docs, Dropbox, GitHub, Figma, Canva, Notion, or trusted file storage. Messaging, social, payment, and short links are not accepted.</p>
-            <label className="file-field">
-              <span className="field-label-row">
-                <span>Reference file</span>
-                <em>Optional</em>
-              </span>
-              <input
-                type="file"
-                onChange={(event) => updateRequestAsset(filePatchFromInput(event))}
-              />
-              <span>
-                {requestAsset.fileName
-                  ? `${requestAsset.fileName} ${requestAsset.fileSize ? `(${requestAsset.fileSize})` : ''}`
-                : 'No file selected'}
-              </span>
-            </label>
+            <p className="field-hint">To send files or images, upload them to Google Drive, Dropbox, GitHub, Figma, Canva, Notion, or trusted storage, then paste the share link here. Messaging, social, payment, and short links are not accepted.</p>
             <button className="primary-button" onClick={() => onRequest(service)} disabled={!requestBriefReady}>
               <WalletCards size={19} />
               {user ? 'Request service' : 'Pi Login to order'}
@@ -2816,19 +2801,7 @@ function OrderCard({
               placeholder="https://www.dropbox.com/s/..."
             />
           </label>
-          <p className="field-hint">Use HTTPS delivery links from Drive, Dropbox, GitHub/GitLab, Vercel, Netlify, Notion, or trusted storage. Direct contact, external payment, and short links are blocked.</p>
-          <label className="file-field">
-            Delivery file
-            <input
-              type="file"
-              onChange={(event) => updateDeliveryDraft(order.id, filePatchFromInput(event, 'delivery'))}
-            />
-            <span>
-              {draft.deliveryFileName
-                ? `${draft.deliveryFileName} ${draft.deliveryFileSize ? `(${draft.deliveryFileSize})` : ''}`
-                : 'No file selected'}
-            </span>
-          </label>
+          <p className="field-hint">To deliver files or images, upload them to Drive, Dropbox, GitHub/GitLab, Vercel, Netlify, Notion, or trusted storage, then paste the HTTPS delivery link here. Direct contact, external payment, and short links are blocked.</p>
           <button className="primary-button" onClick={() => onDeliverOrder(order.id)} disabled={!hasDeliveryContent}>
             <Upload size={18} />
             Submit delivery
