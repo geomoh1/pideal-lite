@@ -722,8 +722,12 @@ function MarketplaceApp() {
   const latestServices = [...approvedServices]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, 4);
-  const activeOrder = orders.find(
+  const selectedBuyerServiceOrders = orders.filter(
     (order) => order.serviceId === selectedService?.id && order.buyerId === currentUserId,
+  );
+  const activeOrder = selectedBuyerServiceOrders.find((order) => !isClosedBuyerOrder(order));
+  const previousOrder = selectedBuyerServiceOrders.find(
+    (order) => isClosedBuyerOrder(order) && order.id !== activeOrder?.id,
   );
 
   const userBuyerOrders = orders.filter((order) => order.buyerId === currentUserId);
@@ -1430,6 +1434,7 @@ function MarketplaceApp() {
             user={user}
             service={selectedService}
             activeOrder={activeOrder}
+            previousOrder={previousOrder}
             requestNote={requestNote}
             setRequestNote={setRequestNote}
             requestAsset={requestAsset}
@@ -1855,6 +1860,7 @@ function DetailView({
   user,
   service,
   activeOrder,
+  previousOrder,
   requestNote,
   setRequestNote,
   requestAsset,
@@ -2049,6 +2055,10 @@ function DetailView({
             canConfirm={canConfirm}
           />
         )}
+
+        {!activeOrder && previousOrder && (
+          <PreviousOrderSummary order={previousOrder} service={service} />
+        )}
       </section>
     </section>
     </Localized>
@@ -2156,6 +2166,27 @@ function OrderProgress({
           onRate={(rating) => onRateOrder(order.id, rating)}
         />
       )}
+    </div>
+    </Localized>
+  );
+}
+
+function PreviousOrderSummary({ order, service }) {
+  const remainingPi = getRemainingPi(order, service);
+
+  return (
+    <Localized>
+    <div className="previous-order-summary">
+      <span className="eyebrow">Previous order</span>
+      <div className="order-title static">
+        <span>Last order for this service</span>
+        <StatusBadge status={order.status} />
+      </div>
+      <p>{getResolvedOrderHint(order) || 'This previous order is closed. You can request this service again.'}</p>
+      <div className="order-meta-grid compact">
+        <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
+        <Metric label="Remaining" value={`${remainingPi} Pi`} />
+      </div>
     </div>
     </Localized>
   );
@@ -2474,6 +2505,15 @@ function getActionOrderMode(order, userId, service) {
 
 function uniqueOrders(orders) {
   return Array.from(new Map(orders.map((order) => [order.id, order])).values());
+}
+
+function isClosedBuyerOrder(order) {
+  if (!order) return false;
+  if ([ORDER_STATUS.CANCELLED, ORDER_STATUS.REFUNDED].includes(order.status)) return true;
+  if (order.status === ORDER_STATUS.COMPLETED) {
+    return ['released', 'refunded'].includes(order.escrowStatus) || order.sellerPayoutStatus === 'paid';
+  }
+  return false;
 }
 
 function canOpenOrderDispute(order, remainingPi = 0) {
