@@ -1600,6 +1600,36 @@ textarea {
   background: #fff;
 }
 
+.order-card-summary,
+.order-card-details {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.order-card-summary p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.next-action-pill {
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid rgba(217, 140, 25, 0.38);
+  border-radius: 999px;
+  color: #704507;
+  background: #fff8e8;
+  font-size: 0.78rem;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.order-meta-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .order-title {
   display: flex;
   align-items: flex-start;
@@ -1628,6 +1658,16 @@ textarea {
 
 .order-actions {
   justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-review-section {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-review-list {
+  display: grid;
   gap: 10px;
 }
 

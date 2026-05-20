@@ -538,8 +538,8 @@ function MarketplaceApp() {
   const [newService, setNewService] = useState(blankService);
   const [requestNote, setRequestNote] = useState('');
   const [requestAsset, setRequestAsset] = useState(blankRequestAsset);
-  const [orderTab, setOrderTab] = useState('buyer');
-  const [adminTab, setAdminTab] = useState('services');
+  const [orderTab, setOrderTab] = useState('action');
+  const [adminTab, setAdminTab] = useState('review');
   const [deliveryDrafts, setDeliveryDrafts] = useState({});
   const [disputeDrafts, setDisputeDrafts] = useState({});
   const [payoutWalletDraft, setPayoutWalletDraft] = useState('');
@@ -1816,7 +1816,7 @@ function ServiceSection({ title, services, openService }) {
             </span>
             <span>
               <strong>{service.title}</strong>
-              <small>{service.pricePi} Pi · {service.deliveryDays}d</small>
+              <small>{service.pricePi} Pi - {service.deliveryDays}d</small>
             </span>
           </button>
         ))}
@@ -2439,6 +2439,38 @@ function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) 
   );
 }
 
+function getOrderActionLabel(order, service, mode) {
+  const remainingPi = getRemainingPi(order, service);
+
+  if (mode === 'buyer') {
+    if (order.status === ORDER_STATUS.PENDING_PAYMENT) return 'Pay deposit';
+    if (order.status === ORDER_STATUS.DELIVERED && remainingPi > 0) return 'Pay remaining';
+    if (order.status === ORDER_STATUS.DELIVERED && remainingPi <= 0) return 'Review delivery';
+    if (order.status === ORDER_STATUS.COMPLETED && order.escrowStatus === 'release_pending') {
+      return 'Review before dispute deadline';
+    }
+    return '';
+  }
+
+  if (mode === 'seller') {
+    if (order.status === ORDER_STATUS.REQUESTED) return 'Accept or reject order';
+    if ([ORDER_STATUS.DEPOSIT_PAID, ORDER_STATUS.PAID].includes(order.status)) return 'Start work';
+    if (order.status === ORDER_STATUS.IN_PROGRESS) return 'Submit delivery';
+  }
+
+  return '';
+}
+
+function getActionOrderMode(order, userId, service) {
+  if (order.buyerId === userId && getOrderActionLabel(order, service, 'buyer')) return 'buyer';
+  if (order.sellerId === userId && getOrderActionLabel(order, service, 'seller')) return 'seller';
+  return order.sellerId === userId ? 'seller' : 'buyer';
+}
+
+function uniqueOrders(orders) {
+  return Array.from(new Map(orders.map((order) => [order.id, order])).values());
+}
+
 function OrdersView({
   user,
   orderTab,
@@ -2461,7 +2493,25 @@ function OrdersView({
   onDisputeOrder,
   onLogin,
 }) {
-  const visibleOrders = orderTab === 'buyer' ? buyerOrders : sellerOrders;
+  const [expandedOrders, setExpandedOrders] = useState({});
+  const userId = user?.uid;
+  const allUserOrders = uniqueOrders([...buyerOrders, ...sellerOrders]);
+  const actionOrders = allUserOrders.filter((order) => {
+    const service = services.find((item) => item.id === order.serviceId);
+    if (!service) return false;
+    const mode = getActionOrderMode(order, userId, service);
+    return Boolean(getOrderActionLabel(order, service, mode));
+  });
+  const visibleOrders =
+    orderTab === 'action'
+      ? actionOrders
+      : orderTab === 'buyer'
+        ? buyerOrders
+        : sellerOrders;
+
+  function toggleOrderDetails(orderId) {
+    setExpandedOrders((current) => ({ ...current, [orderId]: !current[orderId] }));
+  }
 
   return (
     <Localized>
@@ -2472,9 +2522,9 @@ function OrdersView({
           <h1>Orders</h1>
         </div>
         <div className="segmented">
-          {['buyer', 'seller'].map((tab) => (
+          {['action', 'buyer', 'seller'].map((tab) => (
             <button key={tab} className={orderTab === tab ? 'active' : ''} onClick={() => setOrderTab(tab)}>
-              {tab === 'buyer' ? 'Buying' : 'Selling'}
+              {tab === 'action' ? 'Action needed' : tab === 'buyer' ? 'Buying' : 'Selling'}
             </button>
           ))}
         </div>
@@ -2492,13 +2542,18 @@ function OrdersView({
         {visibleOrders.map((order) => {
           const service = services.find((item) => item.id === order.serviceId);
           if (!service) return null;
+          const mode = orderTab === 'action' ? getActionOrderMode(order, userId, service) : orderTab;
+          const actionLabel = getOrderActionLabel(order, service, mode);
 
           return (
             <OrderCard
               key={order.id}
               order={order}
               service={service}
-              mode={orderTab}
+              mode={mode}
+              actionLabel={actionLabel}
+              expanded={Boolean(expandedOrders[order.id])}
+              onToggleDetails={toggleOrderDetails}
               draft={deliveryDrafts[order.id] ?? {}}
               updateDeliveryDraft={updateDeliveryDraft}
               disputeReason={disputeDrafts[order.id] ?? ''}
@@ -2519,7 +2574,7 @@ function OrdersView({
         {visibleOrders.length === 0 && (
           <div className="empty-state">
             <BriefcaseBusiness size={24} />
-            <p>{user ? 'No orders in this tab yet.' : 'Pi login required for orders.'}</p>
+            <p>{user ? (orderTab === 'action' ? 'No orders need action right now.' : 'No orders in this tab yet.') : 'Pi login required for orders.'}</p>
           </div>
         )}
       </div>
@@ -2532,6 +2587,9 @@ function OrderCard({
   order,
   service,
   mode,
+  actionLabel,
+  expanded,
+  onToggleDetails,
   draft,
   updateDeliveryDraft,
   disputeReason,
@@ -2553,16 +2611,36 @@ function OrderCard({
   const remainingPi = getRemainingPi(order, service);
   const deliveryAssetsLocked = order.deliveryAssetsLocked || (order.status === ORDER_STATUS.DELIVERED && remainingPi > 0);
   const showBuyerDelivery = mode === 'buyer' && [ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(order.status);
+  const detailsId = `order-details-${order.id}`;
 
   return (
     <Localized>
     <article className="order-card">
-      <button className="order-title" onClick={() => openService(service.id)}>
-        <span>{service.title}</span>
-        <StatusBadge status={order.status} />
-      </button>
-      <p>{counterpart}. {order.buyerNote || 'No buyer note added.'}</p>
+      <div className="order-card-summary">
+        <button className="order-title" onClick={() => openService(service.id)}>
+          <span>{service.title}</span>
+          <StatusBadge status={order.status} />
+        </button>
+        {actionLabel && <span className="next-action-pill">{actionLabel}</span>}
+        <p>{counterpart}. {order.buyerNote || 'No buyer note added.'}</p>
+        <div className="order-meta-grid compact">
+          <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
+          <Metric label="Remaining" value={`${remainingPi} Pi`} />
+        </div>
+        <button
+          className="ghost-button small"
+          onClick={() => onToggleDetails(order.id)}
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+        >
+          {expanded ? 'Hide details' : 'Show details'}
+        </button>
+      </div>
+
+      {expanded && (
+      <div className="order-card-details" id={detailsId}>
       <OrderMaterials order={order} />
+      <StatusTimeline status={order.status} />
       <div className="order-meta-grid">
         <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
         <Metric label="Remaining" value={`${remainingPi} Pi`} />
@@ -2689,6 +2767,8 @@ function OrderCard({
 
       {mode === 'buyer' && order.status === ORDER_STATUS.COMPLETED && (
         <RatingControl rating={order.rating} onRate={(rating) => onRateOrder(order.id, rating)} compact />
+      )}
+      </div>
       )}
     </article>
     </Localized>
@@ -2852,6 +2932,8 @@ function AdminView({
   const pendingPayoutOrders = payoutOrders.filter((order) => order.sellerPayoutStatus === 'manual_required');
   const refundOrders = orders.filter((order) => order.buyerRefundStatus);
   const pendingRefundOrders = refundOrders.filter((order) => order.buyerRefundStatus === 'manual_required');
+  const disputedOrders = orders.filter((order) => order.status === ORDER_STATUS.DISPUTED);
+  const reviewCount = disputedOrders.length + pendingPayoutOrders.length + pendingRefundOrders.length + openReports.length;
 
   function updatePayoutTxid(payoutId, value) {
     setPayoutTxids((current) => ({ ...current, [payoutId]: value }));
@@ -2896,13 +2978,13 @@ function AdminView({
           <h1>Moderation</h1>
         </div>
         <div className="segmented">
-          {['services', 'orders', 'payouts', 'refunds', 'reports'].map((tab) => (
+          {['review', 'services', 'orders', 'payouts', 'refunds', 'reports'].map((tab) => (
             <button key={tab} className={adminTab === tab ? 'active' : ''} onClick={() => setAdminTab(tab)}>
-              {tab}
+              {tab === 'review' ? 'Needs review' : tab}
             </button>
           ))}
         </div>
-        {['orders', 'payouts'].includes(adminTab) && (
+        {['review', 'orders', 'payouts'].includes(adminTab) && (
           <button className="secondary-button small" onClick={releaseDueEscrows}>
             Settle due escrows
           </button>
@@ -2910,12 +2992,145 @@ function AdminView({
       </div>
 
       <div className="stats-grid">
+        <Metric label="Needs review" value={reviewCount} />
         <Metric label="Pending" value={pendingCount} />
         <Metric label="Orders" value={orders.length} />
         <Metric label="Payouts due" value={pendingPayoutOrders.length} />
         <Metric label="Refunds due" value={pendingRefundOrders.length} />
         <Metric label="Reports" value={openReports.length} />
       </div>
+
+      {adminTab === 'review' && (
+        <div className="list-panel">
+          {reviewCount === 0 && <p className="muted-line">No admin actions need review right now.</p>}
+
+          {disputedOrders.length > 0 && (
+            <AdminReviewSection title="Open disputes" count={disputedOrders.length}>
+              {disputedOrders.map((order) => {
+                const service = services.find((item) => item.id === order.serviceId);
+                return (
+                  <AdminOrderCard
+                    key={order.id}
+                    order={order}
+                    service={service}
+                    releaseOrder={releaseOrder}
+                    refundOrder={refundOrder}
+                  />
+                );
+              })}
+            </AdminReviewSection>
+          )}
+
+          {pendingPayoutOrders.length > 0 && (
+            <AdminReviewSection title="Seller payouts due" count={pendingPayoutOrders.length}>
+              {pendingPayoutOrders.map((order) => {
+                const service = services.find((item) => item.id === order.serviceId);
+                const txidDraft = payoutTxids[order.sellerPayoutId] || '';
+                return (
+                  <article className="order-card" key={order.sellerPayoutId || order.id}>
+                    <div className="order-title static">
+                      <span>{service?.title ?? 'Removed service'}</span>
+                      <StatusBadge status={formatSellerPayoutStatus(order.sellerPayoutStatus)} />
+                    </div>
+                    <p>Seller: {order.sellerName}. Net due: {order.sellerPayoutPi || 0} Pi</p>
+                    {order.sellerWalletAddress ? (
+                      <div className="wallet-address-row">
+                        <span>
+                          <strong>Seller wallet address</strong>
+                          <code>{order.sellerWalletAddress}</code>
+                        </span>
+                        <button className="ghost-button small" onClick={() => copyText(order.sellerWalletAddress)}>
+                          Copy address
+                        </button>
+                      </div>
+                    ) : (
+                      <StatusHint icon={<AlertTriangle size={18} />} text="Seller payout wallet address is missing." />
+                    )}
+                    <div className="payout-form">
+                      <input
+                        type="text"
+                        value={txidDraft}
+                        onChange={(event) => updatePayoutTxid(order.sellerPayoutId, event.target.value)}
+                        placeholder="Manual payout transaction ID"
+                      />
+                      <button
+                        className="secondary-button small"
+                        onClick={() => submitPayout(order)}
+                        disabled={!order.sellerPayoutId || !txidDraft.trim()}
+                      >
+                        Mark payout completed
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </AdminReviewSection>
+          )}
+
+          {pendingRefundOrders.length > 0 && (
+            <AdminReviewSection title="Buyer refunds due" count={pendingRefundOrders.length}>
+              {pendingRefundOrders.map((order) => {
+                const service = services.find((item) => item.id === order.serviceId);
+                const txidDraft = refundTxids[order.buyerRefundId] || '';
+                return (
+                  <article className="order-card" key={order.buyerRefundId || order.id}>
+                    <div className="order-title static">
+                      <span>{service?.title ?? 'Removed service'}</span>
+                      <StatusBadge status={formatBuyerRefundStatus(order.buyerRefundStatus)} />
+                    </div>
+                    <p>Buyer: {order.buyerName}. Refund due: {order.refundedPi || 0} Pi</p>
+                    {order.buyerWalletAddress ? (
+                      <div className="wallet-address-row">
+                        <span>
+                          <strong>Buyer refund wallet address</strong>
+                          <code>{order.buyerWalletAddress}</code>
+                        </span>
+                        <button className="ghost-button small" onClick={() => copyText(order.buyerWalletAddress)}>
+                          Copy address
+                        </button>
+                      </div>
+                    ) : (
+                      <StatusHint icon={<AlertTriangle size={18} />} text="Buyer refund wallet address is missing." />
+                    )}
+                    <div className="payout-form">
+                      <input
+                        type="text"
+                        value={txidDraft}
+                        onChange={(event) => updateRefundTxid(order.buyerRefundId, event.target.value)}
+                        placeholder="Manual refund transaction ID"
+                      />
+                      <button
+                        className="secondary-button small"
+                        onClick={() => submitRefund(order)}
+                        disabled={!order.buyerRefundId || !txidDraft.trim()}
+                      >
+                        Mark refund completed
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </AdminReviewSection>
+          )}
+
+          {openReports.length > 0 && (
+            <AdminReviewSection title="Open reports" count={openReports.length}>
+              {openReports.map((report) => (
+                <article className="report-card" key={report.id}>
+                  <div>
+                    <span className="eyebrow">{report.status}</span>
+                    <h2>{report.serviceTitle}</h2>
+                    <p>{report.reason}</p>
+                  </div>
+                  <button className="secondary-button small" onClick={() => resolveReport(report.id)}>
+                    Resolve
+                  </button>
+                </article>
+              ))}
+            </AdminReviewSection>
+          )}
+        </div>
+      )}
 
       {adminTab === 'services' && (
         <div className="list-panel">
@@ -2925,7 +3140,7 @@ function AdminView({
                 <span className="mini-art" style={{ '--accent': service.accent }}>{service.icon}</span>
                 <span>
                   <strong>{service.title}</strong>
-                  <small>{service.category} · {service.status}</small>
+                  <small>{service.category} - {service.status}</small>
                 </span>
               </button>
               <p>{service.summary}</p>
@@ -3009,7 +3224,7 @@ function AdminView({
                   <StatusBadge status={order.status} />
                   {isSellerBlocked && <span className="status risk">Seller blocked</span>}
                 </div>
-                <p>Buyer: {order.buyerName} · Seller: {order.sellerName}</p>
+                <p>Buyer: {order.buyerName} - Seller: {order.sellerName}</p>
                 <div className="order-meta-grid">
                   <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
                   <Metric label={`Fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
@@ -3054,7 +3269,7 @@ function AdminView({
                     <span>{service?.title ?? 'Removed service'}</span>
                     <StatusBadge status={formatSellerPayoutStatus(order.sellerPayoutStatus)} />
                   </div>
-                  <p>Seller: {order.sellerName} · Order: {order.id}</p>
+                  <p>Seller: {order.sellerName} - Order: {order.id}</p>
                   <div className="order-meta-grid">
                     <Metric label="Gross" value={`${order.amountPi || order.paidPi || 0} Pi`} />
                     <Metric label={`Fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
@@ -3195,6 +3410,60 @@ function AdminView({
         </div>
       )}
     </section>
+    </Localized>
+  );
+}
+
+function AdminReviewSection({ title, count, children }) {
+  return (
+    <Localized>
+    <section className="admin-review-section">
+      <div className="section-heading tight">
+        <h2>{title}</h2>
+        <span className="count-pill">{count}</span>
+      </div>
+      <div className="admin-review-list">
+        {children}
+      </div>
+    </section>
+    </Localized>
+  );
+}
+
+function AdminOrderCard({ order, service, releaseOrder, refundOrder }) {
+  const isOpenSellerOrder = ![ORDER_STATUS.COMPLETED, ORDER_STATUS.CANCELLED, ORDER_STATUS.REFUNDED].includes(order.status);
+  const isSellerBlocked = isOpenSellerOrder && (order.sellerStatus === 'blocked' || service?.sellerStatus === 'blocked');
+
+  return (
+    <Localized>
+    <article className="order-card">
+      <div className="order-title static">
+        <span>{service?.title ?? 'Removed service'}</span>
+        <StatusBadge status={order.status} />
+        {isSellerBlocked && <span className="status risk">Seller blocked</span>}
+      </div>
+      <p>Buyer: {order.buyerName} - Seller: {order.sellerName}</p>
+      <div className="order-meta-grid">
+        <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
+        <Metric label={`Fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
+        <Metric label="Escrow" value={formatEscrowStatus(order.escrowStatus)} />
+        <Metric label="Created" value={order.createdAt} />
+      </div>
+      <EscrowSummary order={order} />
+      {order.status === ORDER_STATUS.DISPUTED && (
+        <>
+          <AdminDisputeReview order={order} service={service} />
+          <div className="moderation-actions">
+            <button className="secondary-button small" onClick={() => releaseOrder(order.id)}>
+              Settle for seller
+            </button>
+            <button className="ghost-button small danger" onClick={() => refundOrder(order.id)}>
+              Refund buyer
+            </button>
+          </div>
+        </>
+      )}
+    </article>
     </Localized>
   );
 }
