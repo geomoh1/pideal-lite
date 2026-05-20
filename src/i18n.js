@@ -52,6 +52,8 @@ const ar = {
   'No orders need action right now.': 'لا توجد طلبات تتطلب إجراء الآن.',
   'Show details': 'عرض التفاصيل',
   'Hide details': 'إخفاء التفاصيل',
+  'Show details and accept/reject': 'عرض التفاصيل والقبول/الرفض',
+  'Open details to accept or reject this order.': 'يلزمك فتح التفاصيل لقبول أو رفض هذا الطلب.',
   'Pay remaining': 'ادفع المتبقي',
   'Review delivery': 'راجع التسليم',
   'Review before dispute deadline': 'راجع قبل انتهاء مهلة النزاع',

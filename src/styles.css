@@ -1165,6 +1165,18 @@ input::placeholder {
   line-height: 1.4;
 }
 
+.terms-box p a,
+.delivery-box p a,
+.material-list p a,
+.order-status p a,
+.order-card-summary p a,
+.admin-review-block p a,
+.detail-hero p a {
+  color: var(--brand-dark);
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
 .action-panel,
 .form-panel,
 .list-panel {

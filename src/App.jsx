@@ -1900,7 +1900,7 @@ function DetailView({
         <div className="detail-hero" style={{ '--accent': service.accent }}>
           <span>{service.category}</span>
           <h1>{service.title}</h1>
-          <p>{service.summary}</p>
+          <p><LinkifiedText text={service.summary} /></p>
         </div>
 
         <div className="seller-row">
@@ -1928,18 +1928,18 @@ function DetailView({
           ))}
           <div className="terms-box">
             <span className="eyebrow">Terms</span>
-            <p>{service.terms}</p>
+            <p><LinkifiedText text={service.terms} /></p>
           </div>
           <div className="terms-box">
             <span className="eyebrow">Trust signals</span>
-            <p>{service.experience || 'New seller profile.'}</p>
-            <p><strong>Requirements:</strong> {service.requirementsFromBuyer || 'Buyer brief required before work starts.'}</p>
-            <p><strong>Revision policy:</strong> {service.revisionPolicy || 'Revision policy not provided.'}</p>
+            <p><LinkifiedText text={service.experience || 'New seller profile.'} /></p>
+            <p><strong>Requirements:</strong> <LinkifiedText text={service.requirementsFromBuyer || 'Buyer brief required before work starts.'} /></p>
+            <p><strong>Revision policy:</strong> <LinkifiedText text={service.revisionPolicy || 'Revision policy not provided.'} /></p>
             {service.portfolioUrl && (
-              <span className="delivery-link"><LinkIcon size={15} /> {service.portfolioUrl}</span>
+              <ExternalTextLink href={service.portfolioUrl} icon={<LinkIcon size={15} />} />
             )}
             {service.proofLink && (
-              <span className="delivery-link"><LinkIcon size={15} /> {service.proofLink}</span>
+              <ExternalTextLink href={service.proofLink} icon={<LinkIcon size={15} />} />
             )}
           </div>
         </div>
@@ -2089,7 +2089,7 @@ function OrderProgress({
       <div>
         <span className="eyebrow">Order status</span>
         <strong>{order.status}</strong>
-        <p>{order.buyerNote || 'No buyer note added.'}</p>
+        <p><LinkifiedText text={order.buyerNote || 'No buyer note added.'} /></p>
       </div>
       <OrderMaterials order={order} />
       <StatusTimeline status={order.status} />
@@ -2115,7 +2115,7 @@ function OrderProgress({
       {showDeliveryBox && (
         <div className="delivery-box">
           <span className="eyebrow">Seller delivery</span>
-          <p>{order.deliveryMessage || 'Work delivered. Pay remaining amount to unlock full delivery files.'}</p>
+          <p><LinkifiedText text={order.deliveryMessage || 'Work delivered. Pay remaining amount to unlock full delivery files.'} /></p>
           {deliveryAssetsLocked && (
             <StatusHint
               icon={<ShieldCheck size={18} />}
@@ -2125,7 +2125,7 @@ function OrderProgress({
           {!deliveryAssetsLocked && (
             <>
               {order.deliveryLink && (
-                <span className="delivery-link"><LinkIcon size={15} /> {order.deliveryLink}</span>
+                <ExternalTextLink href={order.deliveryLink} icon={<LinkIcon size={15} />} />
               )}
               {order.deliveryFileName && (
                 <span className="delivery-link">
@@ -2189,6 +2189,35 @@ function PreviousOrderSummary({ order, service }) {
       </div>
     </div>
     </Localized>
+  );
+}
+
+function LinkifiedText({ text }) {
+  if (!text) return null;
+
+  const parts = String(text).split(/(https?:\/\/[^\s<>"']+)/g);
+
+  return parts.map((part, index) => {
+    if (/^https?:\/\/[^\s<>"']+$/.test(part)) {
+      return (
+        <a key={`${part}-${index}`} href={part} target="_blank" rel="noreferrer">
+          {part}
+        </a>
+      );
+    }
+
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
+}
+
+function ExternalTextLink({ href, children, className = 'delivery-link', icon = null }) {
+  if (!href) return null;
+
+  return (
+    <a className={className} href={href} target="_blank" rel="noreferrer">
+      {icon}
+      {children || href}
+    </a>
   );
 }
 
@@ -2256,12 +2285,9 @@ function OrderMaterials({ order }) {
     <Localized>
     <div className="material-list">
       <span className="eyebrow">Buyer materials</span>
-      {order.requestSourceText && <p>{order.requestSourceText}</p>}
+      {order.requestSourceText && <p><LinkifiedText text={order.requestSourceText} /></p>}
       {order.requestReferenceLink && (
-        <span className="delivery-link">
-          <LinkIcon size={15} />
-          {order.requestReferenceLink}
-        </span>
+        <ExternalTextLink href={order.requestReferenceLink} icon={<LinkIcon size={15} />} />
       )}
       {order.requestFileName && (
         <span className="delivery-link">
@@ -2654,6 +2680,14 @@ function OrdersView({
   );
 }
 
+function getOrderDetailsButtonLabel(order, mode, expanded) {
+  if (mode === 'seller' && order.status === ORDER_STATUS.REQUESTED) {
+    return expanded ? 'Hide details' : 'Show details and accept/reject';
+  }
+
+  return expanded ? 'Hide details' : 'Show details';
+}
+
 function OrderCard({
   order,
   service,
@@ -2685,6 +2719,7 @@ function OrderCard({
   const disputeWindowOpen = canOpenOrderDispute(order, remainingPi);
   const resolvedOrderHint = getResolvedOrderHint(order);
   const detailsId = `order-details-${order.id}`;
+  const sellerApprovalPending = mode === 'seller' && order.status === ORDER_STATUS.REQUESTED;
 
   return (
     <Localized>
@@ -2695,18 +2730,24 @@ function OrderCard({
           <StatusBadge status={order.status} />
         </button>
         {actionLabel && <span className="next-action-pill">{actionLabel}</span>}
-        <p>{counterpart}. {order.buyerNote || 'No buyer note added.'}</p>
+        <p>{counterpart}. <LinkifiedText text={order.buyerNote || 'No buyer note added.'} /></p>
         <div className="order-meta-grid compact">
           <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
           <Metric label="Remaining" value={`${remainingPi} Pi`} />
         </div>
+        {sellerApprovalPending && (
+          <StatusHint
+            icon={<AlertTriangle size={18} />}
+            text="Open details to accept or reject this order."
+          />
+        )}
         <button
           className="ghost-button small"
           onClick={() => onToggleDetails(order.id)}
           aria-expanded={expanded}
           aria-controls={detailsId}
         >
-          {expanded ? 'Hide details' : 'Show details'}
+          {getOrderDetailsButtonLabel(order, mode, expanded)}
         </button>
       </div>
 
@@ -2798,7 +2839,7 @@ function OrderCard({
       {showBuyerDelivery && (
         <div className="delivery-box">
           <span className="eyebrow">Seller delivery</span>
-          <p>{order.deliveryMessage || 'Work delivered. Pay remaining amount to unlock full delivery files.'}</p>
+          <p><LinkifiedText text={order.deliveryMessage || 'Work delivered. Pay remaining amount to unlock full delivery files.'} /></p>
           {deliveryAssetsLocked && (
             <StatusHint
               icon={<ShieldCheck size={18} />}
@@ -2808,7 +2849,7 @@ function OrderCard({
           {!deliveryAssetsLocked && (
             <>
               {order.deliveryLink && (
-                <span className="delivery-link"><LinkIcon size={15} /> {order.deliveryLink}</span>
+                <ExternalTextLink href={order.deliveryLink} icon={<LinkIcon size={15} />} />
               )}
               {order.deliveryFileName && (
                 <span className="delivery-link">
@@ -3560,25 +3601,22 @@ function AdminDisputeReview({ order, service }) {
       <div className="admin-review-grid">
         <div className="admin-review-block">
           <strong>Dispute reason</strong>
-          <p>{order.disputeReason || 'No dispute reason was recorded for this order.'}</p>
+          <p><LinkifiedText text={order.disputeReason || 'No dispute reason was recorded for this order.'} /></p>
         </div>
         <div className="admin-review-block">
           <strong>Seller service post</strong>
           <p><b>{serviceTitle}</b></p>
-          <p>{serviceSummary}</p>
-          <p><b>Terms:</b> {serviceTerms}</p>
-          <p><b>Revision policy:</b> {revisionPolicy}</p>
-          <p><b>Buyer requirements:</b> {buyerRequirements}</p>
+          <p><LinkifiedText text={serviceSummary} /></p>
+          <p><b>Terms:</b> <LinkifiedText text={serviceTerms} /></p>
+          <p><b>Revision policy:</b> <LinkifiedText text={revisionPolicy} /></p>
+          <p><b>Buyer requirements:</b> <LinkifiedText text={buyerRequirements} /></p>
         </div>
         <div className="admin-review-block">
           <strong>Buyer request</strong>
-          <p>{order.buyerNote || 'No buyer note added.'}</p>
-          {order.requestSourceText && <p>{order.requestSourceText}</p>}
+          <p><LinkifiedText text={order.buyerNote || 'No buyer note added.'} /></p>
+          {order.requestSourceText && <p><LinkifiedText text={order.requestSourceText} /></p>}
           {order.requestReferenceLink && (
-            <span className="delivery-link">
-              <LinkIcon size={15} />
-              {order.requestReferenceLink}
-            </span>
+            <ExternalTextLink href={order.requestReferenceLink} icon={<LinkIcon size={15} />} />
           )}
           {order.requestFileName && (
             <span className="delivery-link">
@@ -3589,12 +3627,9 @@ function AdminDisputeReview({ order, service }) {
         </div>
         <div className="admin-review-block">
           <strong>Seller delivery</strong>
-          <p>{order.deliveryMessage || 'No seller delivery message recorded.'}</p>
+          <p><LinkifiedText text={order.deliveryMessage || 'No seller delivery message recorded.'} /></p>
           {order.deliveryLink && (
-            <span className="delivery-link">
-              <LinkIcon size={15} />
-              {order.deliveryLink}
-            </span>
+            <ExternalTextLink href={order.deliveryLink} icon={<LinkIcon size={15} />} />
           )}
           {order.deliveryFileName && (
             <span className="delivery-link">
