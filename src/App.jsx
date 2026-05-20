@@ -541,6 +541,7 @@ function MarketplaceApp() {
   const [orderTab, setOrderTab] = useState('buyer');
   const [adminTab, setAdminTab] = useState('services');
   const [deliveryDrafts, setDeliveryDrafts] = useState({});
+  const [disputeDrafts, setDisputeDrafts] = useState({});
   const [payoutWalletDraft, setPayoutWalletDraft] = useState('');
   const [flowError, setFlowError] = useState('');
   const [flowNotice, setFlowNotice] = useState('');
@@ -1111,6 +1112,10 @@ function MarketplaceApp() {
     }));
   }
 
+  function updateDisputeDraft(orderId, value) {
+    setDisputeDrafts((current) => ({ ...current, [orderId]: value }));
+  }
+
   async function handleDeliverOrder(orderId) {
     const draft = deliveryDrafts[orderId] ?? {};
     try {
@@ -1181,12 +1186,20 @@ function MarketplaceApp() {
     }
   }
 
-  async function handleDisputeOrder(orderId) {
+  async function handleDisputeOrder(orderId, reason) {
+    const disputeReason = String(reason || '').trim();
+    if (disputeReason.length < 10) {
+      setFlowError('Add a clear dispute reason before opening admin review.');
+      setFlowNotice('');
+      return;
+    }
+
     try {
-      const updatedOrder = await disputeOrderApi(orderId);
+      const updatedOrder = await disputeOrderApi(orderId, disputeReason);
       setFlowNotice('Order marked as disputed for admin review.');
       setFlowError('');
       replaceOrder(updatedOrder);
+      setDisputeDrafts((current) => ({ ...current, [orderId]: '' }));
       void refreshNotifications(user);
     } catch (error) {
       setFlowError(getErrorMessage(error, 'Order could not be marked as disputed.'));
@@ -1427,6 +1440,8 @@ function MarketplaceApp() {
             onConfirmDelivery={handleConfirmDelivery}
             onRateOrder={handleRateOrder}
             onDisputeOrder={handleDisputeOrder}
+            disputeDrafts={disputeDrafts}
+            updateDisputeDraft={updateDisputeDraft}
             onReportService={reportService}
             onShareService={handleShareService}
           />
@@ -1452,6 +1467,8 @@ function MarketplaceApp() {
             services={services}
             deliveryDrafts={deliveryDrafts}
             updateDeliveryDraft={updateDeliveryDraft}
+            disputeDrafts={disputeDrafts}
+            updateDisputeDraft={updateDisputeDraft}
             openService={openService}
             onPay={handlePayOrder}
             onAcceptOrder={handleAcceptOrder}
@@ -1848,6 +1865,8 @@ function DetailView({
   onConfirmDelivery,
   onRateOrder,
   onDisputeOrder,
+  disputeDrafts,
+  updateDisputeDraft,
   onReportService,
   onShareService,
 }) {
@@ -2024,6 +2043,8 @@ function DetailView({
             onConfirmDelivery={onConfirmDelivery}
             onRateOrder={onRateOrder}
             onDisputeOrder={onDisputeOrder}
+            disputeReason={disputeDrafts[activeOrder.id] ?? ''}
+            updateDisputeDraft={updateDisputeDraft}
             deliveryConfirmed={deliveryConfirmed}
             canConfirm={canConfirm}
           />
@@ -2041,6 +2062,8 @@ function OrderProgress({
   onConfirmDelivery,
   onRateOrder,
   onDisputeOrder,
+  disputeReason,
+  updateDisputeDraft,
   deliveryConfirmed,
   canConfirm,
 }) {
@@ -2112,10 +2135,12 @@ function OrderProgress({
             </button>
           ) : null}
           {!deliveryAssetsLocked && (
-            <button className="ghost-button small" onClick={() => onDisputeOrder(order.id)}>
-              <AlertTriangle size={16} />
-              Dispute
-            </button>
+            <DisputeAction
+              orderId={order.id}
+              reason={disputeReason}
+              updateDisputeDraft={updateDisputeDraft}
+              onDisputeOrder={onDisputeOrder}
+            />
           )}
         </div>
       )}
@@ -2125,6 +2150,38 @@ function OrderProgress({
           rating={order.rating}
           onRate={(rating) => onRateOrder(order.id, rating)}
         />
+      )}
+    </div>
+    </Localized>
+  );
+}
+
+function DisputeAction({ orderId, reason, updateDisputeDraft, onDisputeOrder }) {
+  const disputeReason = String(reason || '');
+  const canOpenDispute = disputeReason.trim().length >= 10;
+
+  return (
+    <Localized>
+    <div className="dispute-action">
+      <label>
+        Dispute reason
+        <textarea
+          value={disputeReason}
+          onChange={(event) => updateDisputeDraft(orderId, event.target.value)}
+          rows={3}
+          placeholder="Explain what is wrong with the delivery before admin review"
+        />
+      </label>
+      <button
+        className="ghost-button small"
+        onClick={() => onDisputeOrder(orderId, disputeReason)}
+        disabled={!canOpenDispute}
+      >
+        <AlertTriangle size={16} />
+        Dispute
+      </button>
+      {!canOpenDispute && (
+        <p className="field-hint">Add a clear reason so admin can review the order fairly.</p>
       )}
     </div>
     </Localized>
@@ -2391,6 +2448,8 @@ function OrdersView({
   services,
   deliveryDrafts,
   updateDeliveryDraft,
+  disputeDrafts,
+  updateDisputeDraft,
   openService,
   onPay,
   onAcceptOrder,
@@ -2442,6 +2501,8 @@ function OrdersView({
               mode={orderTab}
               draft={deliveryDrafts[order.id] ?? {}}
               updateDeliveryDraft={updateDeliveryDraft}
+              disputeReason={disputeDrafts[order.id] ?? ''}
+              updateDisputeDraft={updateDisputeDraft}
               openService={openService}
               onPay={onPay}
               onAcceptOrder={onAcceptOrder}
@@ -2473,6 +2534,8 @@ function OrderCard({
   mode,
   draft,
   updateDeliveryDraft,
+  disputeReason,
+  updateDisputeDraft,
   openService,
   onPay,
   onAcceptOrder,
@@ -2614,9 +2677,12 @@ function OrderCard({
             </button>
           ) : null}
           {!deliveryAssetsLocked && (
-            <button className="ghost-button small" onClick={() => onDisputeOrder(order.id)}>
-              Dispute
-            </button>
+            <DisputeAction
+              orderId={order.id}
+              reason={disputeReason}
+              updateDisputeDraft={updateDisputeDraft}
+              onDisputeOrder={onDisputeOrder}
+            />
           )}
         </div>
       )}
@@ -2952,14 +3018,17 @@ function AdminView({
                 </div>
                 <EscrowSummary order={order} />
                 {order.status === ORDER_STATUS.DISPUTED && (
-                  <div className="moderation-actions">
-                    <button className="secondary-button small" onClick={() => releaseOrder(order.id)}>
-                      Settle for seller
-                    </button>
-                    <button className="ghost-button small danger" onClick={() => refundOrder(order.id)}>
-                      Refund buyer
-                    </button>
-                  </div>
+                  <>
+                    <AdminDisputeReview order={order} service={service} />
+                    <div className="moderation-actions">
+                      <button className="secondary-button small" onClick={() => releaseOrder(order.id)}>
+                        Settle for seller
+                      </button>
+                      <button className="ghost-button small danger" onClick={() => refundOrder(order.id)}>
+                        Refund buyer
+                      </button>
+                    </div>
+                  </>
                 )}
               </article>
             );
@@ -3126,6 +3195,77 @@ function AdminView({
         </div>
       )}
     </section>
+    </Localized>
+  );
+}
+
+function AdminDisputeReview({ order, service }) {
+  const serviceTitle = service?.title || order.serviceTitle || 'Removed service';
+  const serviceSummary = service?.summary || order.serviceSummary || 'No service summary available.';
+  const serviceTerms = service?.terms || order.serviceTerms || 'No service terms recorded.';
+  const revisionPolicy = service?.revisionPolicy || order.serviceRevisionPolicy || 'No revision policy recorded.';
+  const buyerRequirements =
+    service?.requirementsFromBuyer || order.serviceRequirementsFromBuyer || 'No buyer requirements recorded.';
+  const disputeDeadline = order.disputeWindowEndsAt || order.releaseEligibleAt || '';
+
+  return (
+    <Localized>
+    <div className="admin-dispute-review">
+      <span className="eyebrow">Dispute review</span>
+      <div className="admin-review-grid">
+        <div className="admin-review-block">
+          <strong>Dispute reason</strong>
+          <p>{order.disputeReason || 'No dispute reason was recorded for this order.'}</p>
+        </div>
+        <div className="admin-review-block">
+          <strong>Seller service post</strong>
+          <p><b>{serviceTitle}</b></p>
+          <p>{serviceSummary}</p>
+          <p><b>Terms:</b> {serviceTerms}</p>
+          <p><b>Revision policy:</b> {revisionPolicy}</p>
+          <p><b>Buyer requirements:</b> {buyerRequirements}</p>
+        </div>
+        <div className="admin-review-block">
+          <strong>Buyer request</strong>
+          <p>{order.buyerNote || 'No buyer note added.'}</p>
+          {order.requestSourceText && <p>{order.requestSourceText}</p>}
+          {order.requestReferenceLink && (
+            <span className="delivery-link">
+              <LinkIcon size={15} />
+              {order.requestReferenceLink}
+            </span>
+          )}
+          {order.requestFileName && (
+            <span className="delivery-link">
+              <Paperclip size={15} />
+              {order.requestFileName} {order.requestFileSize ? `(${order.requestFileSize})` : ''}
+            </span>
+          )}
+        </div>
+        <div className="admin-review-block">
+          <strong>Seller delivery</strong>
+          <p>{order.deliveryMessage || 'No seller delivery message recorded.'}</p>
+          {order.deliveryLink && (
+            <span className="delivery-link">
+              <LinkIcon size={15} />
+              {order.deliveryLink}
+            </span>
+          )}
+          {order.deliveryFileName && (
+            <span className="delivery-link">
+              <Paperclip size={15} />
+              {order.deliveryFileName} {order.deliveryFileSize ? `(${order.deliveryFileSize})` : ''}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="order-meta-grid">
+        <Metric label="Paid by buyer" value={`${order.paidPi || 0} Pi`} />
+        <Metric label={`Platform fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
+        <Metric label="Seller net" value={`${order.sellerPayoutPi || 0} Pi`} />
+        <Metric label="Dispute deadline" value={formatDateTimeLabel(disputeDeadline)} />
+      </div>
+    </div>
     </Localized>
   );
 }

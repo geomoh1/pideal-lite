@@ -455,13 +455,18 @@ try {
   assertEqual(rejectedBlockedDeliver.status, 403, 'Blocked sellers must not deliver active orders.');
   const buyerDisputeAgainstBlockedSeller = await postJson(
     `/api/orders/${blockedDisputeOrderId}/dispute`,
-    {},
+    { reason: 'Seller is blocked and this delivered order needs admin review.' },
     { actorUserId: 'smoke-buyer' },
   );
   assertEqual(
     buyerDisputeAgainstBlockedSeller.order.status,
     'Disputed',
     'Buyer dispute actions must stay available when a seller is blocked.',
+  );
+  assertEqual(
+    buyerDisputeAgainstBlockedSeller.order.disputeReason,
+    'Seller is blocked and this delivered order needs admin review.',
+    'Disputed orders must retain the buyer dispute reason.',
   );
 
   const acceptedOrder = await postJson(`/api/orders/${orderId}/accept`, {}, { actorUserId: 'smoke-seller' });

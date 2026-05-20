@@ -94,6 +94,7 @@ model Order {
   escrowFundedAt       DateTime?
   disputeOpenedAt      DateTime?
   disputeResolvedAt    DateTime?
+  disputeReason        String?
   disputeWindowEndsAt  DateTime?
   releaseEligibleAt    DateTime?
   releasedAt           DateTime?

@@ -920,6 +920,10 @@ app.post('/api/orders/:orderId/cancel', orderRateLimit, requireOrderParticipant,
 app.post('/api/orders/:orderId/dispute', orderRateLimit, requireOrderBuyer, async (request, response, next) => {
   try {
     const order = request.order;
+    const disputeReason = String(request.body?.reason || request.body?.disputeReason || '').trim();
+    if (disputeReason.length < 10) {
+      return response.status(400).json({ ok: false, error: 'A clear dispute reason is required.' });
+    }
     if (![ORDER_STATUS.DELIVERED, ORDER_STATUS.COMPLETED].includes(order.status)) {
       return response.status(409).json({ ok: false, error: 'Only delivered or completed orders can be disputed.' });
     }
@@ -935,6 +939,7 @@ app.post('/api/orders/:orderId/dispute', orderRateLimit, requireOrderBuyer, asyn
           status: ORDER_STATUS.DISPUTED,
           escrowStatus: ESCROW_STATUS.DISPUTED,
           disputeOpenedAt: disputedAt,
+          disputeReason,
         },
         include: ORDER_INCLUDE,
       });
@@ -947,6 +952,7 @@ app.post('/api/orders/:orderId/dispute', orderRateLimit, requireOrderBuyer, asyn
           amountPi: Number(order.escrowHeldPi || calculatePaidTotal(order)),
           status: ESCROW_STATUS.DISPUTED,
           note: 'Escrow release paused because a dispute was opened.',
+          metadataJson: stringifyJson({ disputeReason }),
         },
       });
 

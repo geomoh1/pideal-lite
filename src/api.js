@@ -136,8 +136,8 @@ export async function cancelOrder(orderId) {
   return data.order;
 }
 
-export async function disputeOrder(orderId) {
-  const data = await postJson(`/api/orders/${encodeURIComponent(orderId)}/dispute`, {});
+export async function disputeOrder(orderId, reason) {
+  const data = await postJson(`/api/orders/${encodeURIComponent(orderId)}/dispute`, { reason });
   return data.order;
 }
 
