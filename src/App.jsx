@@ -2508,6 +2508,67 @@ function getOrderActionLabel(order, service, mode) {
   return '';
 }
 
+function getOrderActionGuidance(order, service, mode) {
+  const remainingPi = getRemainingPi(order, service);
+
+  if (mode === 'buyer') {
+    if (order.status === ORDER_STATUS.PENDING_PAYMENT) {
+      return {
+        notice: 'Open details to pay the deposit for this order.',
+        detailsLabel: 'Show details and pay deposit',
+      };
+    }
+    if (order.status === ORDER_STATUS.DELIVERED && remainingPi > 0) {
+      return {
+        notice: 'Open details to pay the remaining balance and unlock delivery files.',
+        detailsLabel: 'Show details and pay remaining',
+      };
+    }
+    if (order.status === ORDER_STATUS.DELIVERED && remainingPi <= 0) {
+      return {
+        notice: 'Open details to review the delivery and confirm or open a dispute.',
+        detailsLabel: 'Show details and review delivery',
+      };
+    }
+    if (order.status === ORDER_STATUS.COMPLETED && canOpenOrderDispute(order, remainingPi)) {
+      return {
+        notice: 'Open details to review delivery before the dispute deadline.',
+        detailsLabel: 'Show details and review delivery',
+      };
+    }
+  }
+
+  if (mode === 'seller') {
+    if (order.status === ORDER_STATUS.REQUESTED) {
+      return {
+        notice: 'Open details to accept or reject this order.',
+        detailsLabel: 'Show details and accept/reject',
+      };
+    }
+    if ([ORDER_STATUS.DEPOSIT_PAID, ORDER_STATUS.PAID].includes(order.status)) {
+      return {
+        notice: 'Open details to start work on this paid order.',
+        detailsLabel: 'Show details and start work',
+      };
+    }
+    if (order.status === ORDER_STATUS.IN_PROGRESS) {
+      return {
+        notice: 'Open details to submit the delivery message or link.',
+        detailsLabel: 'Show details and submit delivery',
+      };
+    }
+  }
+
+  if (mode === 'admin' && order.status === ORDER_STATUS.DISPUTED) {
+    return {
+      notice: 'Review dispute details below, then settle for seller or refund buyer.',
+      detailsLabel: 'Review dispute',
+    };
+  }
+
+  return null;
+}
+
 function getActionOrderMode(order, userId, service) {
   if (order.buyerId === userId && getOrderActionLabel(order, service, 'buyer')) return 'buyer';
   if (order.sellerId === userId && getOrderActionLabel(order, service, 'seller')) return 'seller';
@@ -2665,12 +2726,9 @@ function OrdersView({
   );
 }
 
-function getOrderDetailsButtonLabel(order, mode, expanded) {
-  if (mode === 'seller' && order.status === ORDER_STATUS.REQUESTED) {
-    return expanded ? 'Hide details' : 'Show details and accept/reject';
-  }
-
-  return expanded ? 'Hide details' : 'Show details';
+function getOrderDetailsButtonLabel(order, service, mode, expanded) {
+  if (expanded) return 'Hide details';
+  return getOrderActionGuidance(order, service, mode)?.detailsLabel || 'Show details';
 }
 
 function OrderCard({
@@ -2704,7 +2762,7 @@ function OrderCard({
   const disputeWindowOpen = canOpenOrderDispute(order, remainingPi);
   const resolvedOrderHint = getResolvedOrderHint(order);
   const detailsId = `order-details-${order.id}`;
-  const sellerApprovalPending = mode === 'seller' && order.status === ORDER_STATUS.REQUESTED;
+  const actionGuidance = getOrderActionGuidance(order, service, mode);
 
   return (
     <Localized>
@@ -2720,10 +2778,10 @@ function OrderCard({
           <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
           <Metric label="Remaining" value={`${remainingPi} Pi`} />
         </div>
-        {sellerApprovalPending && (
+        {actionGuidance?.notice && (
           <StatusHint
             icon={<AlertTriangle size={18} />}
-            text="Open details to accept or reject this order."
+            text={actionGuidance.notice}
           />
         )}
         <button
@@ -2732,7 +2790,7 @@ function OrderCard({
           aria-expanded={expanded}
           aria-controls={detailsId}
         >
-          {getOrderDetailsButtonLabel(order, mode, expanded)}
+          {getOrderDetailsButtonLabel(order, service, mode, expanded)}
         </button>
       </div>
 
@@ -3523,6 +3581,7 @@ function AdminReviewSection({ title, count, children }) {
 function AdminOrderCard({ order, service, releaseOrder, refundOrder }) {
   const isOpenSellerOrder = ![ORDER_STATUS.COMPLETED, ORDER_STATUS.CANCELLED, ORDER_STATUS.REFUNDED].includes(order.status);
   const isSellerBlocked = isOpenSellerOrder && (order.sellerStatus === 'blocked' || service?.sellerStatus === 'blocked');
+  const actionGuidance = getOrderActionGuidance(order, service, 'admin');
 
   return (
     <Localized>
@@ -3533,6 +3592,9 @@ function AdminOrderCard({ order, service, releaseOrder, refundOrder }) {
         {isSellerBlocked && <span className="status risk">Seller blocked</span>}
       </div>
       <p>Buyer: {order.buyerName} - Seller: {order.sellerName}</p>
+      {actionGuidance?.notice && (
+        <StatusHint icon={<AlertTriangle size={18} />} text={actionGuidance.notice} />
+      )}
       <div className="order-meta-grid">
         <Metric label="Paid" value={`${order.paidPi || 0} Pi`} />
         <Metric label={`Fee ${order.platformFeePercent || '5%'}`} value={`${order.platformFeePi || 0} Pi`} />
