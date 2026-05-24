@@ -35,6 +35,9 @@ const ar = {
   'Enter your public Pi wallet address only for seller payouts or buyer refunds. Never enter your passphrase, private key, or seed phrase.':
     'أدخل عنوان محفظة Pi العام فقط لاستلام مدفوعات البائع أو استردادات المشتري. لا تدخل passphrase أو المفتاح الخاص أو seed phrase أبدًا.',
   'Save wallet address': 'حفظ عنوان المحفظة',
+  'Add your Pi wallet address to receive seller payouts. You can still browse and buy, but seller payouts require a wallet address.':
+    'أضف عنوان محفظة Pi لاستلام مدفوعات البائع. يمكنك الاستمرار في التصفح والشراء، لكن مدفوعات البائع تتطلب عنوان محفظة.',
+  Edit: 'تعديل',
   'Buyer refund wallet address': 'عنوان محفظة استرداد المشتري',
   'Buyer refund wallet address is missing.': 'عنوان محفظة استرداد المشتري غير موجود.',
   refunds: 'الاستردادات',

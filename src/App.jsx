@@ -16,6 +16,7 @@ import {
   Link as LinkIcon,
   LogIn,
   Paperclip,
+  Pencil,
   Plus,
   Search,
   Share2,
@@ -25,6 +26,7 @@ import {
   Upload,
   UserRound,
   WalletCards,
+  X,
 } from 'lucide-react';
 import {
   authenticateWithPi,
@@ -559,6 +561,7 @@ function MarketplaceApp() {
   const [deliveryDrafts, setDeliveryDrafts] = useState({});
   const [disputeDrafts, setDisputeDrafts] = useState({});
   const [payoutWalletDraft, setPayoutWalletDraft] = useState('');
+  const [isPayoutWalletEditing, setIsPayoutWalletEditing] = useState(false);
   const [flowError, setFlowError] = useState('');
   const [flowNotice, setFlowNotice] = useState('');
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
@@ -585,6 +588,7 @@ function MarketplaceApp() {
 
   useEffect(() => {
     setPayoutWalletDraft(user?.piWalletAddress || '');
+    setIsPayoutWalletEditing(false);
   }, [user?.piWalletAddress]);
 
   const refreshAppData = useCallback(async ({
@@ -1377,6 +1381,7 @@ function MarketplaceApp() {
     try {
       const updatedUser = await updatePayoutWalletApi(payoutWalletDraft, user);
       setUser((current) => ({ ...current, ...updatedUser }));
+      setIsPayoutWalletEditing(false);
       setFlowNotice('Payout wallet address saved.');
       setFlowError('');
       await refreshAppData({ actor: { ...user, ...updatedUser }, showRefreshIndicator: true });
@@ -1384,6 +1389,16 @@ function MarketplaceApp() {
       setFlowError(getErrorMessage(error, 'Payout wallet address could not be saved.'));
       setFlowNotice('');
     }
+  }
+
+  function startPayoutWalletEdit() {
+    setPayoutWalletDraft(user?.piWalletAddress || '');
+    setIsPayoutWalletEditing(true);
+  }
+
+  function cancelPayoutWalletEdit() {
+    setPayoutWalletDraft(user?.piWalletAddress || '');
+    setIsPayoutWalletEditing(false);
   }
 
   return (
@@ -1516,6 +1531,9 @@ function MarketplaceApp() {
             openService={openService}
             payoutWalletDraft={payoutWalletDraft}
             setPayoutWalletDraft={setPayoutWalletDraft}
+            isPayoutWalletEditing={isPayoutWalletEditing}
+            onEditPayoutWallet={startPayoutWalletEdit}
+            onCancelPayoutWalletEdit={cancelPayoutWalletEdit}
             onSavePayoutWallet={savePayoutWallet}
           />
         )}
@@ -2304,6 +2322,7 @@ function OrderMaterials({ order }) {
 function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) {
   const pricePi = Number(newService.pricePi);
   const depositPi = Number(newService.depositPi);
+  const sellerWalletMissing = Boolean(user && !user.piWalletAddress);
   const canSubmit =
     newService.title.trim() &&
     newService.summary.trim() &&
@@ -2335,6 +2354,13 @@ function AddServiceView({ user, newService, setNewService, onSubmit, onLogin }) 
           <LogIn size={18} />
           <span>Pi login is required before submitting a listing.</span>
           <button className="secondary-button small" onClick={onLogin}>Login</button>
+        </div>
+      )}
+
+      {sellerWalletMissing && (
+        <div className="inline-callout warning">
+          <AlertTriangle size={18} />
+          <span>Add your Pi wallet address to receive seller payouts. You can still browse and buy, but seller payouts require a wallet address.</span>
         </div>
       )}
 
@@ -2956,9 +2982,17 @@ function ProfileView({
   openService,
   payoutWalletDraft,
   setPayoutWalletDraft,
+  isPayoutWalletEditing,
+  onEditPayoutWallet,
+  onCancelPayoutWalletEdit,
   onSavePayoutWallet,
 }) {
   const profileModes = isAdmin ? ['Browse', 'Sell', 'Admin'] : ['Browse', 'Sell'];
+  const hasPayoutWallet = Boolean(user?.piWalletAddress);
+  const walletIsEditable = !hasPayoutWallet || isPayoutWalletEditing;
+  const walletInputValue = walletIsEditable ? payoutWalletDraft : user?.piWalletAddress || '';
+  const walletHasChanges = payoutWalletDraft.trim() !== (user?.piWalletAddress || '');
+  const showSellerWalletWarning = Boolean(user && !hasPayoutWallet);
   const completedOrders = [...buyerOrders, ...sellerOrders].filter(
     (order) => order.status === ORDER_STATUS.COMPLETED,
   );
@@ -2995,6 +3029,13 @@ function ProfileView({
         ))}
       </div>
 
+      {selectedMode === 'Sell' && showSellerWalletWarning && (
+        <div className="inline-callout warning">
+          <AlertTriangle size={18} />
+          <span>Add your Pi wallet address to receive seller payouts. You can still browse and buy, but seller payouts require a wallet address.</span>
+        </div>
+      )}
+
       <div className="stats-grid">
         <Metric label="Rating" value={averageRating} />
         <Metric label="Buyer orders" value={buyerOrders.length} />
@@ -3008,26 +3049,52 @@ function ProfileView({
             <h2>Payout / refund wallet address</h2>
             {user.piWalletAddress && <span className="count-pill">saved</span>}
           </div>
+          {showSellerWalletWarning && selectedMode !== 'Sell' && (
+            <div className="inline-callout warning">
+              <AlertTriangle size={18} />
+              <span>Add your Pi wallet address to receive seller payouts. You can still browse and buy, but seller payouts require a wallet address.</span>
+            </div>
+          )}
           <div className="request-materials">
             <label>
               Public Pi wallet address
               <input
                 type="text"
-                value={payoutWalletDraft}
+                value={walletInputValue}
                 onChange={(event) => setPayoutWalletDraft(event.target.value)}
                 placeholder="G..."
                 autoComplete="off"
                 spellCheck="false"
+                readOnly={!walletIsEditable}
+                className={!walletIsEditable ? 'readonly-input' : undefined}
               />
             </label>
             <p className="field-hint">Enter your public Pi wallet address only for seller payouts or buyer refunds. Never enter your passphrase, private key, or seed phrase.</p>
-            <button
-              className="secondary-button"
-              onClick={onSavePayoutWallet}
-              disabled={!payoutWalletDraft.trim() || payoutWalletDraft.trim() === (user.piWalletAddress || '')}
-            >
-              Save wallet address
-            </button>
+            <div className="wallet-actions">
+              {walletIsEditable ? (
+                <>
+                  <button
+                    className="secondary-button"
+                    onClick={onSavePayoutWallet}
+                    disabled={!payoutWalletDraft.trim() || !walletHasChanges}
+                  >
+                    <CheckCircle2 size={18} />
+                    Save wallet address
+                  </button>
+                  {hasPayoutWallet && (
+                    <button className="ghost-button small" onClick={onCancelPayoutWalletEdit}>
+                      <X size={16} />
+                      Cancel
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button className="secondary-button" onClick={onEditPayoutWallet}>
+                  <Pencil size={18} />
+                  Edit
+                </button>
+              )}
+            </div>
           </div>
         </section>
       )}
