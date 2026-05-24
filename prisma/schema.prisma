@@ -99,6 +99,8 @@ model Order {
   releaseEligibleAt    DateTime?
   releasedAt           DateTime?
   refundRecordedAt     DateTime?
+  cancelReason         String?
+  cancelledAt          DateTime?
   sellerPayoutTxid     String?
   refundTxid           String?
   payments             Payment[]
@@ -113,8 +115,10 @@ model Order {
   @@index([buyerId])
   @@index([sellerId])
   @@index([status])
+  @@index([status, createdAt])
   @@index([escrowStatus])
   @@index([releaseEligibleAt])
+  @@index([cancelledAt])
 }
 
 model EscrowEvent {

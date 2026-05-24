@@ -235,6 +235,8 @@ export function serializeOrder(order, viewer = null) {
     releaseEligibleAt: formatDateTime(order.releaseEligibleAt),
     releasedAt: formatDateTime(order.releasedAt),
     refundRecordedAt: formatDateTime(order.refundRecordedAt),
+    cancelReason: order.cancelReason || '',
+    cancelledAt: formatDateTime(order.cancelledAt),
     sellerPayoutId: sellerPayoutRecord?.id || '',
     sellerPayoutStatus,
     sellerPayoutTxid: sellerPayoutRecord?.payoutTxid || order.sellerPayoutTxid || '',

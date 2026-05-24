@@ -309,6 +309,17 @@ try {
   const orderId = createdOrder.order.id;
   assertEqual(createdOrder.order.status, 'Requested', 'New orders must start as seller-review requests.');
   assertEqual(createdOrder.order.requestFileName, 'smoke-reference.png', 'Order request metadata must persist.');
+  const duplicateActiveOrder = await postJsonExpectFailure(
+    '/api/orders',
+    {
+      serviceId,
+      buyerNote: 'Please create a duplicate smoke logo request.',
+      requestSourceText: 'This duplicate should be rejected while the first order is active.',
+    },
+    { actorUserId: 'smoke-buyer' },
+  );
+  assertEqual(duplicateActiveOrder.status, 409, 'Duplicate active orders for the same buyer and service must be rejected.');
+  assertEqual(duplicateActiveOrder.data.orderId, orderId, 'Duplicate rejection must return the existing active order id.');
   const sellerNotifications = await getJson('/api/notifications', { actorUserId: 'smoke-seller' });
   assertTruthy(
     sellerNotifications.notifications.some(
@@ -319,6 +330,48 @@ try {
     ),
     'Seller must see requested order notifications for their own orders.',
   );
+
+  await prisma.user.upsert({
+    where: { id: 'expired-buyer' },
+    update: { username: 'expired.buyer' },
+    create: { id: 'expired-buyer', username: 'expired.buyer', role: 'user' },
+  });
+  const expiredOrderId = `smoke-expired-request-${startedAt}`;
+  await prisma.order.create({
+    data: {
+      id: expiredOrderId,
+      serviceId,
+      buyerId: 'expired-buyer',
+      sellerId: 'smoke-seller',
+      buyerName: 'expired.buyer',
+      sellerName: 'smoke.seller',
+      status: 'Requested',
+      buyerNote: 'This old request should be auto-cancelled.',
+      createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+    },
+  });
+  const replacementAfterExpiredRequest = await postJson(
+    '/api/orders',
+    {
+      serviceId,
+      buyerNote: 'Replacement request after seller did not respond.',
+      requestSourceText: 'The previous request is older than the 24-hour response window.',
+    },
+    { actorUserId: 'expired-buyer' },
+  );
+  assertEqual(
+    replacementAfterExpiredRequest.order.status,
+    'Requested',
+    'Buyer must be able to request again after an expired requested order is auto-cancelled.',
+  );
+  const expiredOrder = await prisma.order.findUnique({ where: { id: expiredOrderId } });
+  assertEqual(expiredOrder.status, 'Cancelled', 'Expired requested orders must be cancelled automatically.');
+  assertEqual(
+    expiredOrder.cancelReason,
+    'seller_no_response',
+    'Expired requested orders must record the seller-no-response cancellation reason.',
+  );
+  assertTruthy(expiredOrder.cancelledAt, 'Expired requested orders must record a cancellation timestamp.');
 
   await prisma.user.upsert({
     where: { id: 'unrelated-buyer' },

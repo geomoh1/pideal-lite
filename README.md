@@ -93,6 +93,8 @@ Requested -> Pending Payment -> Deposit Paid -> In Progress -> Delivered -> Comp
 
 The buyer first sends requirements/materials. The seller must accept the request before the buyer can pay the deposit. Completed deposit and balance payments are recorded as held escrow on the order. After seller delivery, the order is not completed until the buyer pays the remaining balance. If the service was already fully paid, delivery confirmation can complete the order.
 
+Requested orders expire after 24 hours if the seller does not accept or reject them. The backend marks those orders as `Cancelled` with `cancelReason = "seller_no_response"`, and the buyer can request the same service again only after the previous order is closed. The backend rejects duplicate active orders for the same buyer and service; active statuses are `Requested`, `Pending Payment`, `Deposit Paid`, `Paid`, `In Progress`, `Delivered`, and `Disputed`.
+
 When an order becomes `Completed`, PiDeal starts a dispute window controlled by `ESCROW_DISPUTE_WINDOW_HOURS` (`72` by default). If no dispute is opened before `releaseEligibleAt`, the backend settles the escrow and queues a `SellerPayout` for the seller net of the configured platform fee. If a dispute is opened, settlement is paused until admin chooses refund or settlement for seller.
 
 For disputes:

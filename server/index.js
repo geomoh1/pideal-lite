@@ -56,6 +56,16 @@ const ORDER_STATUS = {
   CANCELLED: 'Cancelled',
 };
 
+const ACTIVE_ORDER_STATUSES = [
+  ORDER_STATUS.REQUESTED,
+  ORDER_STATUS.PENDING_PAYMENT,
+  ORDER_STATUS.DEPOSIT_PAID,
+  ORDER_STATUS.PAID,
+  ORDER_STATUS.IN_PROGRESS,
+  ORDER_STATUS.DELIVERED,
+  ORDER_STATUS.DISPUTED,
+];
+
 const ESCROW_STATUS = {
   NOT_FUNDED: 'not_funded',
   HOLDING: 'holding',
@@ -179,6 +189,9 @@ const ESCROW_DISPUTE_WINDOW_HOURS = normalizeNonNegativeNumber(
   process.env.ESCROW_DISPUTE_WINDOW_HOURS ?? process.env.DISPUTE_WINDOW_HOURS ?? 72,
   72,
 );
+const SELLER_RESPONSE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+const REQUESTED_ORDER_CANCEL_REASON = 'seller_no_response';
+const REQUESTED_ORDER_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
 
 const SERVICE_INCLUDE = {
   seller: true,
@@ -297,7 +310,7 @@ app.get('/api/session', requireAuth, async (request, response) => {
 
 app.get('/api/notifications', requireAuth, async (request, response, next) => {
   try {
-    await releaseEligibleEscrows();
+    await runOrderMaintenance();
     const notifications = await getNotificationsForUser(request.user);
 
     return response.json({
@@ -667,7 +680,7 @@ app.post('/api/users/:userId/seller-status', requireAdmin, async (request, respo
 
 app.get('/api/orders', orderRateLimit, requireAuth, async (request, response, next) => {
   try {
-    await releaseEligibleEscrows();
+    await runOrderMaintenance();
     const viewer = request.user;
     const where = viewer.role === 'admin'
       ? {}
@@ -708,30 +721,59 @@ app.post('/api/orders', orderRateLimit, requireAuth, async (request, response, n
     }
 
     const buyer = request.user;
+    await cancelExpiredRequestedOrders();
 
-    const order = await prisma.order.create({
-      data: {
-        id: orderInput.id,
-        serviceId: service.id,
-        buyerId: buyer.id,
-        sellerId: service.sellerId,
-        buyerName: buyer.username,
-        sellerName: service.seller?.username || 'Pi seller',
-        status: ORDER_STATUS.REQUESTED,
-        buyerNote: orderInput.buyerNote,
-        requestSourceText: orderInput.requestSourceText,
-        requestReferenceLink: orderInput.requestReferenceLink,
-        requestFileName: orderInput.requestFileName,
-        requestFileSize: orderInput.requestFileSize,
-        deliveryMessage: '',
-        deliveryLink: '',
-        deliveryFileName: '',
-        deliveryFileSize: '',
-      },
-      include: ORDER_INCLUDE,
+    const orderResult = await prisma.$transaction(async (tx) => {
+      await lockActiveOrderCreation(tx, buyer.id, service.id);
+
+      const existingActiveOrder = await tx.order.findFirst({
+        where: {
+          buyerId: buyer.id,
+          serviceId: service.id,
+          status: { in: ACTIVE_ORDER_STATUSES },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+
+      if (existingActiveOrder) {
+        return { existingActiveOrder };
+      }
+
+      const order = await tx.order.create({
+        data: {
+          id: orderInput.id,
+          serviceId: service.id,
+          buyerId: buyer.id,
+          sellerId: service.sellerId,
+          buyerName: buyer.username,
+          sellerName: service.seller?.username || 'Pi seller',
+          status: ORDER_STATUS.REQUESTED,
+          buyerNote: orderInput.buyerNote,
+          requestSourceText: orderInput.requestSourceText,
+          requestReferenceLink: orderInput.requestReferenceLink,
+          requestFileName: orderInput.requestFileName,
+          requestFileSize: orderInput.requestFileSize,
+          deliveryMessage: '',
+          deliveryLink: '',
+          deliveryFileName: '',
+          deliveryFileSize: '',
+        },
+        include: ORDER_INCLUDE,
+      });
+
+      return { order };
     });
 
-    return response.status(201).json({ ok: true, order: serializeOrder(order, buyer) });
+    if (orderResult.existingActiveOrder) {
+      return response.status(409).json({
+        ok: false,
+        error: 'You already have an active order for this service.',
+        orderId: orderResult.existingActiveOrder.id,
+      });
+    }
+
+    return response.status(201).json({ ok: true, order: serializeOrder(orderResult.order, buyer) });
   } catch (error) {
     return next(error);
   }
@@ -739,7 +781,11 @@ app.post('/api/orders', orderRateLimit, requireAuth, async (request, response, n
 
 app.post('/api/orders/:orderId/accept', orderRateLimit, requireOrderSeller, async (request, response, next) => {
   try {
-    const order = request.order;
+    await cancelExpiredRequestedOrders();
+    const order = await findOrderById(request.params.orderId);
+    if (!order) {
+      return response.status(404).json({ ok: false, error: 'Order was not found.' });
+    }
     if (isOrderSellerBlocked(order)) {
       return response.status(403).json({ ok: false, error: getBlockedSellerOrderError() });
     }
@@ -890,7 +936,14 @@ app.post('/api/orders/:orderId/review', orderRateLimit, requireOrderBuyer, async
 
 app.post('/api/orders/:orderId/cancel', orderRateLimit, requireOrderParticipant, async (request, response, next) => {
   try {
-    const order = request.order;
+    await cancelExpiredRequestedOrders();
+    const order = await findOrderById(request.params.orderId);
+    if (!order) {
+      return response.status(404).json({ ok: false, error: 'Order was not found.' });
+    }
+    if (order.status === ORDER_STATUS.CANCELLED) {
+      return response.json({ ok: true, order: serializeOrder(order, request.user) });
+    }
     if (![ORDER_STATUS.REQUESTED, ORDER_STATUS.PENDING_PAYMENT].includes(order.status)) {
       return response.status(409).json({ ok: false, error: 'Funded orders must be resolved through delivery, dispute, release, or refund.' });
     }
@@ -907,6 +960,8 @@ app.post('/api/orders/:orderId/cancel', orderRateLimit, requireOrderParticipant,
         status: ORDER_STATUS.CANCELLED,
         escrowStatus: ESCROW_STATUS.NOT_FUNDED,
         escrowHeldPi: 0,
+        cancelReason: getManualCancelReason(order, request.user),
+        cancelledAt: new Date(),
       },
       include: ORDER_INCLUDE,
     });
@@ -1480,7 +1535,7 @@ app.post('/api/pi/payments/:paymentId/complete', paymentRateLimit, requireAuth, 
 
 app.get('/api/orders/:orderId/status', orderRateLimit, requireOrderParticipant, async (request, response, next) => {
   try {
-    await releaseEligibleEscrows();
+    await runOrderMaintenance();
     const order = await findOrderById(request.params.orderId);
     return response.json({ ok: true, order: serializeOrder(order || request.order, request.user) });
   } catch (error) {
@@ -1504,6 +1559,16 @@ const server = app.listen(PORT, () => {
     console.warn('SESSION_SECRET is not configured. Using an ephemeral session secret for this process.');
   }
 });
+
+cancelExpiredRequestedOrders().catch((error) => {
+  console.error('Requested order maintenance failed on startup.', error);
+});
+const requestedOrderMaintenanceInterval = setInterval(() => {
+  cancelExpiredRequestedOrders().catch((error) => {
+    console.error('Requested order maintenance failed.', error);
+  });
+}, REQUESTED_ORDER_MAINTENANCE_INTERVAL_MS);
+requestedOrderMaintenanceInterval.unref?.();
 
 process.once('SIGINT', () => shutdown(server));
 process.once('SIGTERM', () => shutdown(server));
@@ -1593,6 +1658,52 @@ async function findOrderById(orderId) {
     where: { id: orderId },
     include: ORDER_INCLUDE,
   });
+}
+
+async function runOrderMaintenance(now = new Date()) {
+  const [releaseResult, cancelResult] = await Promise.all([
+    releaseEligibleEscrows(now),
+    cancelExpiredRequestedOrders(now),
+  ]);
+
+  return {
+    ...releaseResult,
+    cancelledCount: cancelResult.cancelledCount,
+  };
+}
+
+async function cancelExpiredRequestedOrders(now = new Date()) {
+  const expiresBefore = new Date(now.getTime() - SELLER_RESPONSE_TIMEOUT_MS);
+  const result = await prisma.order.updateMany({
+    where: {
+      status: ORDER_STATUS.REQUESTED,
+      createdAt: { lte: expiresBefore },
+    },
+    data: {
+      status: ORDER_STATUS.CANCELLED,
+      escrowStatus: ESCROW_STATUS.NOT_FUNDED,
+      escrowHeldPi: 0,
+      cancelReason: REQUESTED_ORDER_CANCEL_REASON,
+      cancelledAt: now,
+    },
+  });
+
+  return { cancelledCount: result.count };
+}
+
+async function lockActiveOrderCreation(tx, buyerId, serviceId) {
+  const lockKey = `order:${buyerId}:${serviceId}`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)`;
+}
+
+function getManualCancelReason(order, user) {
+  if (order.status === ORDER_STATUS.REQUESTED && user.id === order.sellerId) {
+    return 'seller_rejected';
+  }
+  if (order.status === ORDER_STATUS.PENDING_PAYMENT) {
+    return 'buyer_cancelled_after_acceptance';
+  }
+  return 'buyer_cancelled';
 }
 
 async function getPublicServiceBySlug(rawSlug) {

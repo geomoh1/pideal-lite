@@ -82,6 +82,22 @@ const ORDER_STATUS = {
   CANCELLED: 'Cancelled',
 };
 
+const ACTIVE_ORDER_STATUSES = [
+  ORDER_STATUS.REQUESTED,
+  ORDER_STATUS.PENDING_PAYMENT,
+  ORDER_STATUS.DEPOSIT_PAID,
+  ORDER_STATUS.PAID,
+  ORDER_STATUS.IN_PROGRESS,
+  ORDER_STATUS.DELIVERED,
+  ORDER_STATUS.DISPUTED,
+];
+
+const CLOSED_ORDER_STATUSES = [
+  ORDER_STATUS.CANCELLED,
+  ORDER_STATUS.REFUNDED,
+  ORDER_STATUS.COMPLETED,
+];
+
 const categories = [
   'All',
   'Design',
@@ -725,7 +741,7 @@ function MarketplaceApp() {
   const selectedBuyerServiceOrders = orders.filter(
     (order) => order.serviceId === selectedService?.id && order.buyerId === currentUserId,
   );
-  const activeOrder = selectedBuyerServiceOrders.find((order) => !isClosedBuyerOrder(order));
+  const activeOrder = selectedBuyerServiceOrders.find((order) => ACTIVE_ORDER_STATUSES.includes(order.status));
   const previousOrder = selectedBuyerServiceOrders.find(
     (order) => isClosedBuyerOrder(order) && order.id !== activeOrder?.id,
   );
@@ -2581,11 +2597,7 @@ function uniqueOrders(orders) {
 
 function isClosedBuyerOrder(order) {
   if (!order) return false;
-  if ([ORDER_STATUS.CANCELLED, ORDER_STATUS.REFUNDED].includes(order.status)) return true;
-  if (order.status === ORDER_STATUS.COMPLETED) {
-    return ['released', 'refunded'].includes(order.escrowStatus) || order.sellerPayoutStatus === 'paid';
-  }
-  return false;
+  return CLOSED_ORDER_STATUSES.includes(order.status);
 }
 
 function canOpenOrderDispute(order, remainingPi = 0) {
@@ -2603,6 +2615,15 @@ function canOpenOrderDispute(order, remainingPi = 0) {
 
 function getResolvedOrderHint(order) {
   if (!order) return '';
+  if (order.status === ORDER_STATUS.CANCELLED && order.cancelReason === 'seller_no_response') {
+    return 'Order cancelled automatically because the seller did not respond within 24 hours.';
+  }
+  if (order.status === ORDER_STATUS.CANCELLED && order.cancelReason === 'seller_rejected') {
+    return 'Order closed because the seller rejected the request.';
+  }
+  if (order.status === ORDER_STATUS.CANCELLED) {
+    return 'Order cancelled. You can request this service again.';
+  }
   if (order.escrowStatus === 'released') {
     return order.sellerPayoutStatus === 'paid'
       ? 'Order closed. Seller payout completed.'
