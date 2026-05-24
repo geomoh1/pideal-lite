@@ -2810,6 +2810,7 @@ function OrderCard({
   const resolvedOrderHint = getResolvedOrderHint(order);
   const detailsId = `order-details-${order.id}`;
   const actionGuidance = getOrderActionGuidance(order, service, mode);
+  const detailsButtonClass = actionGuidance && !expanded ? 'details-cta-button' : 'ghost-button small';
 
   return (
     <Localized>
@@ -2832,7 +2833,7 @@ function OrderCard({
           />
         )}
         <button
-          className="ghost-button small"
+          className={detailsButtonClass}
           onClick={() => onToggleDetails(order.id)}
           aria-expanded={expanded}
           aria-controls={detailsId}

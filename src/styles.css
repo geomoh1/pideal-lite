@@ -628,7 +628,8 @@ select:focus-visible {
 
 .primary-button,
 .secondary-button,
-.ghost-button {
+.ghost-button,
+.details-cta-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -655,6 +656,7 @@ select:focus-visible {
 .primary-button:hover,
 .secondary-button:hover,
 .ghost-button:hover,
+.details-cta-button:hover,
 .service-card:hover {
   transform: translateY(-1px);
 }
@@ -695,6 +697,18 @@ select:focus-visible {
   border: 1px solid transparent;
   color: var(--muted);
   background: transparent;
+}
+
+.details-cta-button {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 1px solid rgba(45, 143, 111, 0.34);
+  color: #fff;
+  background: var(--brand);
+  box-shadow: 0 12px 24px rgba(45, 143, 111, 0.18);
+  font-size: 0.95rem;
+  font-weight: 900;
 }
 
 .small {
